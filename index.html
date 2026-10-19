@@ -59,7 +59,17 @@ button:disabled { opacity:.6; cursor:wait; }
 details.tv { margin-top:8px; font-size:.85rem; color:var(--muted); }
 details.tv table { margin-top:6px; max-width:320px; }
 tbody tr.sel td { background:var(--panel); }
-td.nm { cursor:pointer; }
+tbody tr.clk { cursor:pointer; }
+tbody tr.clk:hover td { background:var(--panel); }
+.charthead { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px; }
+.charthead h2 { margin:0; }
+.pop { animation:pop .35s ease-out; }
+@keyframes pop { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:none; } }
+.draw polyline { stroke-dasharray:1; stroke-dashoffset:1; animation:drawline 1.2s ease-out .15s forwards; }
+.draw circle { opacity:0; animation:fadein .4s ease-out 1.1s forwards; }
+@keyframes drawline { to { stroke-dashoffset:0; } }
+@keyframes fadein { to { opacity:1; } }
+@media (prefers-reduced-motion: reduce) { .pop, .draw polyline, .draw circle { animation:none; } .draw polyline { stroke-dashoffset:0; } .draw circle { opacity:1; } }
 [hidden] { display:none !important; }
 </style>
 </head>
@@ -77,6 +87,7 @@ td.nm { cursor:pointer; }
     <div class="totals" id="totals"></div>
     <div class="bar">
       <button type="button" id="btnAdd">+ Ajouter</button>
+      <button type="button" class="ghost" id="btnChart">📈 Évolution</button>
       <button type="button" class="ghost" id="btnMic" hidden>🎤 Dicter</button>
       <button type="button" class="ghost" id="btnRefresh">Actualiser</button>
       <button type="button" class="ghost" id="btnToken">Accès</button>
@@ -120,8 +131,8 @@ td.nm { cursor:pointer; }
     <p class="help" id="tokenState"></p>
   </form>
 
-  <section class="panel chartpanel" id="chartPanel">
-    <h2>Évolution des prix</h2>
+  <section class="panel chartpanel" id="chartPanel" hidden>
+    <div class="charthead"><h2>Évolution des prix</h2><button type="button" class="ghost" id="chartClose">Masquer</button></div>
     <label class="meta">Afficher : <select id="chartSel"></select></label>
     <div class="chartwrap" style="margin-top:12px">
       <img id="chartImg" alt="" hidden>
@@ -246,7 +257,7 @@ function draw(updated) {
   const head = el("tr");
   [["", ""], ["Élément", ""], ["Payé", "r"], ["Marché", "r"], ["Écart", "r"],
    ["CCC 10 (est.)", "r"], ["CCC 9.5 (est.)", "r"], ["CCC 9 (est.)", "r"], ["", ""]]
-    .forEach(([t, c]) => head.append(el("th", c, t)));
+    .forEach(([t, c]) => { const th = el("th", c, t); if (t === "Marché") th.title = "Prix « tendance » Cardmarket en euros (toutes langues et tous états confondus)"; head.append(th); });
   const thead = el("thead"); thead.append(head);
   const tbody = el("tbody");
   table.append(thead, tbody);
@@ -263,8 +274,12 @@ function draw(updated) {
     }
     const info = el("td");
     const metaParts = [c.set, c.numero].filter(Boolean).join(" · ");
-    if (c.id) { info.className = "nm"; info.title = "Voir l'évolution"; info.addEventListener("click", () => { chartSel = c.id; renderChart(); $("chartPanel").scrollIntoView({ block: "nearest" }); }); }
-    if (c.id && c.id === chartSel) tr.classList.add("sel");
+    if (c.id) {
+      tr.classList.add("clk"); tr.title = "Clique pour suivre l'évolution du prix"; tr.tabIndex = 0;
+      tr.addEventListener("click", ev => { if (!ev.target.closest("button")) openChart(c.id); });
+      tr.addEventListener("keydown", ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === tr) { ev.preventDefault(); openChart(c.id); } });
+    }
+    if (c.id && c.id === chartSel && !$("chartPanel").hidden) tr.classList.add("sel");
     info.append(el("div", "name", c.nom), el("div", "meta", metaParts));
     const del = el("td", "r");
     if (c.uid && !c.pending) {
@@ -297,7 +312,16 @@ function draw(updated) {
 const SVGNS = "http://www.w3.org/2000/svg";
 const sv = (tag, attrs) => { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
 const shortDate = d => new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
-let chartSel = "all";
+let chartSel = "all", animateNext = false;
+function openChart(id, forceOpen) {
+  const p = $("chartPanel");
+  if (!forceOpen && !p.hidden && id === chartSel && id !== "all") { closeChart(); return; }
+  chartSel = id; animateNext = true; p.hidden = false;
+  p.classList.remove("pop"); void p.offsetWidth; p.classList.add("pop");
+  draw();
+  p.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+function closeChart() { $("chartPanel").hidden = true; draw(); }
 
 function chartPoints() {
   const hist = (state.vault && state.vault.history) || {};
@@ -314,6 +338,7 @@ function chartPoints() {
 }
 
 function renderChart() {
+  if ($("chartPanel").hidden) return;
   const cards = state.cards.filter(c => !c.pending && c.id);
   const sel = $("chartSel");
   if (chartSel !== "all" && !cards.some(c => c.id === chartSel)) chartSel = "all";
@@ -353,7 +378,7 @@ function renderChart() {
   if (pts.length === 1) xl(pts[0], "middle");
   else { xl(pts[0], "start"); xl(pts[pts.length - 1], "end"); }
   if (pts.length > 1)
-    svg.append(sv("polyline", { points: pts.map(p => X(p).toFixed(1) + "," + Y(p.v).toFixed(1)).join(" "),
+    svg.append(sv("polyline", { pathLength: 1, points: pts.map(p => X(p).toFixed(1) + "," + Y(p.v).toFixed(1)).join(" "),
       fill: "none", stroke: "var(--accent)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
   (pts.length <= 40 ? pts : [pts[pts.length - 1]]).forEach(p =>
     svg.append(sv("circle", { cx: X(p), cy: Y(p.v), r: 4, fill: "var(--accent)", stroke: "var(--bg)", "stroke-width": 2 })));
@@ -362,6 +387,7 @@ function renderChart() {
   const dot = sv("circle", { r: 6, fill: "var(--accent)", stroke: "var(--bg)", "stroke-width": 2, visibility: "hidden" });
   const hit = sv("rect", { x: 0, y: 0, width: W, height: H, fill: "transparent" });
   svg.append(cross, dot, hit);
+  if (animateNext) { svg.classList.add("draw"); animateNext = false; }
   const tip = el("div", "tip"); tip.hidden = true;
   const show = ev => {
     const r = svg.getBoundingClientRect(); if (!r.width) return;
@@ -634,7 +660,9 @@ $("fNom").addEventListener("input", () => {
 });
 ["fSet", "fNum"].forEach(id => $(id).addEventListener("input", () => { picked = null; }));
 $("btnRefresh").addEventListener("click", refresh);
-$("chartSel").addEventListener("change", () => { chartSel = $("chartSel").value; draw(); });
+$("chartSel").addEventListener("change", () => { openChart($("chartSel").value, true); });
+$("btnChart").addEventListener("click", () => { if ($("chartPanel").hidden) openChart(chartSel, true); else closeChart(); });
+$("chartClose").addEventListener("click", closeChart);
 $("btnToken").addEventListener("click", openToken);
 $("tokenClose").addEventListener("click", () => { $("tokenPanel").hidden = true; });
 $("tokenClear").addEventListener("click", () => { setToken(""); $("tokenState").textContent = "Jeton effacé de ce navigateur."; });
