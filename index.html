@@ -45,6 +45,17 @@ button:disabled { opacity:.6; cursor:wait; }
 .grid label { display:flex; flex-direction:column; gap:4px; font-size:.8rem; color:var(--muted); }
 .row { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
 .help { color:var(--muted); font-size:.85rem; margin:8px 0 0; }
+.chartpanel select { max-width:100%; }
+.chartwrap { display:flex; gap:16px; align-items:flex-start; }
+.chartwrap img { width:72px; height:auto; border-radius:6px; flex:none; }
+.plot { position:relative; flex:1; min-width:0; }
+.plot svg { width:100%; height:auto; display:block; touch-action:pan-y; }
+.tip { position:absolute; pointer-events:none; background:var(--field); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:4px 8px; font-size:.85rem; white-space:nowrap; transform:translate(-50%,-125%); }
+.sum { margin:10px 0 0; font-size:.9rem; }
+details.tv { margin-top:8px; font-size:.85rem; color:var(--muted); }
+details.tv table { margin-top:6px; max-width:320px; }
+tbody tr.sel td { background:var(--panel); }
+td.nm { cursor:pointer; }
 [hidden] { display:none !important; }
 </style>
 </head>
@@ -72,26 +83,22 @@ button:disabled { opacity:.6; cursor:wait; }
   <form class="panel" id="addPanel" hidden autocomplete="off">
     <h2>Ajouter</h2>
     <div class="grid">
-      <label>Type
-        <select id="fType"><option value="carte">Carte</option><option value="scelle">Produit scellé</option></select>
-      </label>
       <label>Nom <input id="fNom" required maxlength="120" placeholder="ex. Dracaufeu ex"></label>
       <label>Extension <input id="fSet" maxlength="120" placeholder="ex. 151 ou Foudre Noire"></label>
-      <label data-for="carte">Numéro <input id="fNum" maxlength="20" inputmode="text" placeholder="ex. 199"></label>
+      <label>Numéro <input id="fNum" maxlength="20" inputmode="text" placeholder="ex. 199"></label>
       <label>Prix payé (€) <input id="fPaye" inputmode="decimal" placeholder="ex. 5,99"></label>
-      <label data-for="scelle" hidden>Prix du marché (€) <input id="fMarche" inputmode="decimal" placeholder="ex. 140"></label>
-      <label data-for="carte">CCC 10 (€) <input id="fC10" inputmode="decimal"></label>
-      <label data-for="carte">CCC 9.5 (€) <input id="fC95" inputmode="decimal"></label>
-      <label data-for="carte">CCC 9 (€) <input id="fC9" inputmode="decimal"></label>
+      <label>CCC 10 (€) <input id="fC10" inputmode="decimal"></label>
+      <label>CCC 9.5 (€) <input id="fC95" inputmode="decimal"></label>
+      <label>CCC 9 (€) <input id="fC9" inputmode="decimal"></label>
     </div>
-    <p class="help" id="addHelp">Pour une carte : nom, extension et numéro suffisent. Le prix du marché est cherché tout seul.</p>
+    <p class="help">Nom, extension et numéro suffisent. Le prix du marché est cherché tout seul, chaque jour.</p>
     <div class="row">
       <button type="submit" id="fGo">Enregistrer</button>
       <button type="button" class="ghost" id="fMic" hidden>🎤 Dicter</button>
       <button type="button" class="ghost" id="fCancel">Annuler</button>
     </div>
     <p class="help" id="heard" role="status"></p>
-    <p class="help" id="micNote" hidden>Dictée : dis par exemple « Ajoute Dracaufeu ex, extension 151, numéro 199, payé 5,99 euros » ou « Ajoute produit scellé display 151, payé 110 euros, valeur 190 euros ». Ton navigateur envoie la voix à son service de reconnaissance (Google pour Chrome). Rien n'est enregistré sans ton clic sur « Enregistrer ».</p>
+    <p class="help" id="micNote" hidden>Dictée : dis par exemple « Ajoute Dracaufeu ex, extension 151, numéro 199, payé 5,99 euros ». Ton navigateur envoie la voix à son service de reconnaissance (Google pour Chrome). Rien n'est enregistré sans ton clic sur « Enregistrer ».</p>
     <p class="err" id="fErr" role="alert"></p>
   </form>
 
@@ -106,6 +113,17 @@ button:disabled { opacity:.6; cursor:wait; }
     </div>
     <p class="help" id="tokenState"></p>
   </form>
+
+  <section class="panel chartpanel" id="chartPanel">
+    <h2>Évolution des prix</h2>
+    <label class="meta">Afficher : <select id="chartSel"></select></label>
+    <div class="chartwrap" style="margin-top:12px">
+      <img id="chartImg" alt="" hidden>
+      <div class="plot" id="plot"></div>
+    </div>
+    <p class="sum" id="chartSum"></p>
+    <details class="tv"><summary>Voir en tableau</summary><div id="chartTable"></div></details>
+  </section>
 
   <div class="wrap" id="list"></div>
 </main>
@@ -238,7 +256,9 @@ function draw(updated) {
       imgCell.append(img);
     }
     const info = el("td");
-    const metaParts = [c.type === "scelle" ? "Scellé" : null, c.set, c.numero].filter(Boolean).join(" · ");
+    const metaParts = [c.set, c.numero].filter(Boolean).join(" · ");
+    if (c.id) { info.className = "nm"; info.title = "Voir l'évolution"; info.addEventListener("click", () => { chartSel = c.id; renderChart(); $("chartPanel").scrollIntoView({ block: "nearest" }); }); }
+    if (c.id && c.id === chartSel) tr.classList.add("sel");
     info.append(el("div", "name", c.nom), el("div", "meta", metaParts));
     const del = el("td", "r");
     if (c.uid && !c.pending) {
@@ -264,6 +284,104 @@ function draw(updated) {
     tile("Valeur actuelle", nowCount ? fmt(now) : "—", "hi"),
     tile("Payé", fmt(paid)), tile("Écart", signed(gain)),
     tile("Mis à jour", lastUpdated || "—", "", true));
+  renderChart();
+}
+
+// ---------- graphique ----------
+const SVGNS = "http://www.w3.org/2000/svg";
+const sv = (tag, attrs) => { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+const shortDate = d => new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+let chartSel = "all";
+
+function chartPoints() {
+  const hist = (state.vault && state.vault.history) || {};
+  const cards = state.cards.filter(c => !c.pending && c.id);
+  const sorted = id => Object.entries(hist[id] || {}).sort((a, b) => a[0] < b[0] ? -1 : 1);
+  if (chartSel !== "all") return sorted(chartSel).map(p => ({ d: p[0], v: p[1] }));
+  const lists = cards.map(c => sorted(c.id)).filter(l => l.length);
+  const dates = [...new Set(lists.flatMap(l => l.map(p => p[0])))].sort();
+  return dates.map(d => ({ d, v: lists.reduce((sum, l) => {
+    let last = null;
+    for (const p of l) { if (p[0] <= d) last = p[1]; else break; }
+    return last == null ? sum : sum + last;
+  }, 0) }));
+}
+
+function renderChart() {
+  const cards = state.cards.filter(c => !c.pending && c.id);
+  const sel = $("chartSel");
+  if (chartSel !== "all" && !cards.some(c => c.id === chartSel)) chartSel = "all";
+  sel.replaceChildren(new Option("Toute la collection", "all"), ...cards.map(c => new Option(c.nom, c.id)));
+  sel.value = chartSel;
+
+  const card = cards.find(c => c.id === chartSel);
+  const img = $("chartImg");
+  if (card && card.image && card.image.startsWith("https://assets.tcgdex.net/")) {
+    img.src = card.image; img.referrerPolicy = "no-referrer"; img.hidden = false;
+  } else { img.hidden = true; img.removeAttribute("src"); }
+
+  const pts = chartPoints(), plot = $("plot"), sum = $("chartSum");
+  $("chartTable").replaceChildren();
+  if (!cards.length) { plot.replaceChildren(); sum.textContent = "Ajoute une carte pour voir son évolution."; return; }
+  if (!pts.length) { plot.replaceChildren(); sum.textContent = "Pas encore de prix enregistré : le premier relevé arrive à la prochaine mise à jour du matin."; return; }
+
+  const W = 480, H = 240, L = 54, R = 14, T = 14, B = 28;
+  let lo = Math.min(...pts.map(p => p.v)), hi = Math.max(...pts.map(p => p.v));
+  if (hi - lo < 0.01) { lo -= 1; hi += 1; } else { const pad = (hi - lo) * 0.1; lo -= pad; hi += pad; }
+  lo = Math.max(0, lo);
+  const t = d => Date.parse(d + "T00:00:00Z");
+  const t0 = t(pts[0].d), t1 = t(pts[pts.length - 1].d);
+  const X = p => pts.length === 1 || t1 === t0 ? L + (W - L - R) / 2 : L + (t(p.d) - t0) / (t1 - t0) * (W - L - R);
+  const Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  const money0 = v => v.toLocaleString("fr-FR", { maximumFractionDigits: hi - lo >= 10 ? 0 : 2, minimumFractionDigits: hi - lo >= 10 ? 0 : 2 }) + " €";
+
+  const svg = sv("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
+    "aria-label": "Courbe des prix, " + pts.length + " relevé" + (pts.length > 1 ? "s" : "") });
+  for (let i = 0; i < 4; i++) {
+    const v = lo + (hi - lo) * i / 3, y = Y(v);
+    svg.append(sv("line", { x1: L, x2: W - R, y1: y, y2: y, stroke: "var(--line)", "stroke-width": 1 }));
+    const lab = sv("text", { x: L - 8, y: y + 4, "text-anchor": "end", fill: "var(--muted)", "font-size": 12 });
+    lab.textContent = money0(v); svg.append(lab);
+  }
+  const xl = (p, anchor) => { const e = sv("text", { x: X(p), y: H - 8, "text-anchor": anchor, fill: "var(--muted)", "font-size": 12 }); e.textContent = shortDate(p.d); svg.append(e); };
+  if (pts.length === 1) xl(pts[0], "middle");
+  else { xl(pts[0], "start"); xl(pts[pts.length - 1], "end"); }
+  if (pts.length > 1)
+    svg.append(sv("polyline", { points: pts.map(p => X(p).toFixed(1) + "," + Y(p.v).toFixed(1)).join(" "),
+      fill: "none", stroke: "var(--accent)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+  (pts.length <= 40 ? pts : [pts[pts.length - 1]]).forEach(p =>
+    svg.append(sv("circle", { cx: X(p), cy: Y(p.v), r: 4, fill: "var(--accent)", stroke: "var(--bg)", "stroke-width": 2 })));
+
+  const cross = sv("line", { y1: T, y2: H - B, stroke: "var(--muted)", "stroke-width": 1, visibility: "hidden" });
+  const dot = sv("circle", { r: 6, fill: "var(--accent)", stroke: "var(--bg)", "stroke-width": 2, visibility: "hidden" });
+  const hit = sv("rect", { x: 0, y: 0, width: W, height: H, fill: "transparent" });
+  svg.append(cross, dot, hit);
+  const tip = el("div", "tip"); tip.hidden = true;
+  const show = ev => {
+    const r = svg.getBoundingClientRect(); if (!r.width) return;
+    const mx = (ev.clientX - r.left) / r.width * W;
+    let best = pts[0];
+    pts.forEach(p => { if (Math.abs(X(p) - mx) < Math.abs(X(best) - mx)) best = p; });
+    const x = X(best), y = Y(best.v);
+    cross.setAttribute("x1", x); cross.setAttribute("x2", x); cross.setAttribute("visibility", "visible");
+    dot.setAttribute("cx", x); dot.setAttribute("cy", y); dot.setAttribute("visibility", "visible");
+    tip.textContent = shortDate(best.d) + " · " + fmt(best.v);
+    tip.style.left = (x / W * 100) + "%"; tip.style.top = (y / H * 100) + "%"; tip.hidden = false;
+  };
+  const hide = () => { cross.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden"); tip.hidden = true; };
+  hit.addEventListener("pointermove", show); hit.addEventListener("pointerdown", show);
+  hit.addEventListener("pointerleave", hide);
+  plot.replaceChildren(svg, tip);
+
+  const first = pts[0], last = pts[pts.length - 1], diff = last.v - first.v;
+  sum.textContent = pts.length === 1
+    ? "Un seul relevé pour l'instant (" + fmt(last.v) + " le " + shortDate(last.d) + "). La courbe se dessinera au fil des jours, un relevé par matin."
+    : "Dernier relevé " + shortDate(last.d) + " : " + fmt(last.v) + " (" + signed(diff) + " depuis le " + shortDate(first.d) + ")."
+      + (chartSel === "all" ? " La valeur totale monte aussi quand tu ajoutes une carte." : "");
+
+  const tb = el("table"), body = el("tbody");
+  pts.slice().reverse().forEach(p => { const tr = el("tr"); tr.append(el("td", "", shortDate(p.d)), el("td", "r", fmt(p.v))); body.append(tr); });
+  tb.append(body); $("chartTable").replaceChildren(tb);
 }
 
 function parseDictation(raw) {
@@ -273,7 +391,6 @@ function parseDictation(raw) {
     set:    W("extensions?|set|série|serie|bloc"),
     numero: W("numéro|numero|n°|n o"),
     paye:   W("payée?s?|achetée?s?|prix payé"),
-    marche: W("valeur|vaut|marché|marche|cote|prix du marché"),
   };
   const found = [];
   for (const [key, re] of Object.entries(MARK)) {
@@ -283,9 +400,7 @@ function parseDictation(raw) {
   const seg = {};
   found.forEach((f, i) => { seg[f.key] = t.slice(f.end, i + 1 < found.length ? found[i + 1].start : t.length).trim(); });
   let head = (found.length ? t.slice(0, found[0].start) : t).trim();
-  const scelle = W("scellée?s?|sealed").test(t);
-  head = head.replace(W("scellée?s?|sealed|produits?", "g"), " ")
-             .replace(/^\s*(?:ajoute|ajouter|rajoute|rajouter|ajout de|ajout)(?![\p{L}\d])/u, "")
+  head = head.replace(/^\s*(?:ajoute|ajouter|rajoute|rajouter|ajout de|ajout)(?![\p{L}\d])/u, "")
              .replace(/^\s*(?:(?:une|un|la|le|ma|mon|cette|ce|des|les|carte|cartes)(?![\p{L}\d])\s*)+/u, "")
              .replace(/\s+/g, " ").trim();
   const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
@@ -299,12 +414,10 @@ function parseDictation(raw) {
   };
   const numero = seg.numero ? (/\d+/.exec(seg.numero.replace(/(\d)\s+(?=\d)/g, "$1")) || [null])[0] : null;
   return {
-    type: scelle ? "scelle" : "carte",
     nom: cap(head),
     set: seg.set ? seg.set.replace(/\s+/g, " ").trim() : "",
     numero: numero || "",
     paye: amount(seg.paye),
-    marche: amount(seg.marche),
   };
 }
 
@@ -314,12 +427,10 @@ const capFirst = t => t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
 function applyDictation(text) {
   const r = parseDictation(text);
   $("heard").textContent = "J'ai entendu : « " + text + " ». Vérifie les champs, puis clique sur « Enregistrer ».";
-  $("fType").value = r.type; toggleType();
   if (r.nom) $("fNom").value = r.nom;
   if (r.set) $("fSet").value = capFirst(r.set);
   if (r.numero) $("fNum").value = r.numero;
   if (r.paye != null) $("fPaye").value = String(r.paye).replace(".", ",");
-  if (r.marche != null && r.type === "scelle") $("fMarche").value = String(r.marche).replace(".", ",");
 }
 function dictate() {
   if (!SR) return;
@@ -350,49 +461,30 @@ function num(v) {
 }
 const newUid = () => Array.from(crypto.getRandomValues(new Uint8Array(5)), b => b.toString(16).padStart(2, "0")).join("");
 
-function toggleType() {
-  const t = $("fType").value;
-  document.querySelectorAll("#addPanel [data-for]").forEach(l => l.hidden = l.dataset.for !== t);
-  $("addHelp").textContent = t === "carte"
-    ? "Pour une carte : nom, extension et numéro suffisent. Le prix du marché est cherché tout seul."
-    : "Pour un produit scellé : indique ce que tu as payé et son prix du marché actuel (à saisir, aucun site gratuit ne le donne).";
-}
-
 async function addItem(ev) {
   ev.preventDefault();
   const err = $("fErr"); err.textContent = "";
-  const type = $("fType").value, nom = $("fNom").value.trim(), set = $("fSet").value.trim();
+  const nom = $("fNom").value.trim(), set = $("fSet").value.trim(), numero = $("fNum").value.trim();
   const paye = num($("fPaye").value);
   if (!nom) { err.textContent = "Le nom est obligatoire."; return; }
+  if (!set || !numero) { err.textContent = "L'extension et le numéro sont obligatoires."; return; }
   if (Number.isNaN(paye)) { err.textContent = "Prix payé invalide."; return; }
-  const uid = newUid();
-  let entry, placeholder;
-  if (type === "carte") {
-    const numero = $("fNum").value.trim();
-    if (!set || !numero) { err.textContent = "Pour une carte, l'extension et le numéro sont obligatoires."; return; }
-    const ccc = {};
-    for (const [k, id] of [["10", "fC10"], ["9.5", "fC95"], ["9", "fC9"]]) {
-      const v = num($(id).value);
-      if (Number.isNaN(v)) { err.textContent = "Un prix CCC est invalide."; return; }
-      if (v != null) ccc[k] = v;
-    }
-    entry = { type, uid, nom, set_api: set, set_affiche: set, numero, ccc };
-    if (paye != null) entry.prix_paye = paye;
-    placeholder = { uid, type, nom, set, numero, prix_paye: paye == null ? 5.99 : paye, prix_marche: null,
-                    ccc10: ccc["10"] ?? null, ccc95: ccc["9.5"] ?? null, ccc9: ccc["9"] ?? null, pending: true };
-  } else {
-    const marche = num($("fMarche").value);
-    if (paye == null || Number.isNaN(paye)) { err.textContent = "Indique le prix payé du produit scellé."; return; }
-    if (Number.isNaN(marche)) { err.textContent = "Prix du marché invalide."; return; }
-    entry = { type, uid, nom, set_affiche: set, prix_paye: paye };
-    if (marche != null) entry.prix_marche_manuel = marche;
-    placeholder = { uid, type, nom, set, numero: null, prix_paye: paye, prix_marche: marche, ccc10: null, ccc95: null, ccc9: null, pending: true };
+  const ccc = {};
+  for (const [k, id] of [["10", "fC10"], ["9.5", "fC95"], ["9", "fC9"]]) {
+    const v = num($(id).value);
+    if (Number.isNaN(v)) { err.textContent = "Un prix CCC est invalide."; return; }
+    if (v != null) ccc[k] = v;
   }
+  const uid = newUid();
+  const entry = { type: "carte", uid, nom, set_api: set, set_affiche: set, numero, ccc };
+  if (paye != null) entry.prix_paye = paye;
+  const placeholder = { uid, type: "carte", nom, set, numero, prix_paye: paye == null ? 5.99 : paye, prix_marche: null,
+                        ccc10: ccc["10"] ?? null, ccc95: ccc["9.5"] ?? null, ccc9: ccc["9"] ?? null, pending: true };
   $("fGo").disabled = true;
   const ok = await change({ action: "add", entry }, cards => cards.concat([placeholder]),
     v => v.watchlist.some(e => e.uid === uid));
   $("fGo").disabled = false;
-  if (ok) { $("addPanel").reset(); toggleType(); $("addPanel").hidden = true; }
+  if (ok) { $("addPanel").reset(); $("addPanel").hidden = true; }
 }
 
 async function removeItem(c) {
@@ -441,9 +533,9 @@ $("login").addEventListener("submit", async ev => {
 
 $("btnAdd").addEventListener("click", () => { $("addPanel").hidden = !$("addPanel").hidden; if (!$("addPanel").hidden) $("fNom").focus(); });
 $("fCancel").addEventListener("click", () => { $("addPanel").hidden = true; });
-$("fType").addEventListener("change", toggleType);
 $("addPanel").addEventListener("submit", addItem);
 $("btnRefresh").addEventListener("click", refresh);
+$("chartSel").addEventListener("change", () => { chartSel = $("chartSel").value; draw(); });
 $("btnToken").addEventListener("click", openToken);
 $("tokenClose").addEventListener("click", () => { $("tokenPanel").hidden = true; });
 $("tokenClear").addEventListener("click", () => { setToken(""); $("tokenState").textContent = "Jeton effacé de ce navigateur."; });
@@ -455,8 +547,6 @@ $("tokenPanel").addEventListener("submit", ev => {
 if (SR) { $("btnMic").hidden = false; $("fMic").hidden = false; $("micNote").hidden = false; }
 $("btnMic").addEventListener("click", dictate);
 $("fMic").addEventListener("click", dictate);
-toggleType();
-
 try {
   const saved = sessionStorage.getItem("k");
   if (saved) unlock(saved).catch(() => { state.password = null; try { sessionStorage.removeItem("k"); } catch (e) {} });
