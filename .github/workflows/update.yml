@@ -1,0 +1,26 @@
+name: Mise à jour quotidienne
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Récupérer cartes et prix
+        env:
+          POKEMON_TCG_API_KEY: ${{ secrets.POKEMON_TCG_API_KEY }}
+        run: python3 scripts/update_prices.py
+      - name: Enregistrer les changements
+        run: |
+          git config user.name "catalogue-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet || git commit -m "Mise à jour des prix"
+          git push

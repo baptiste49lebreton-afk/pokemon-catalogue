@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Collection Pokémon</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root { --bg:#f4f3ef; --fg:#16181d; --muted:#6c717c; --line:#d9d7d0; --accent:#b88700; --up:#1f7a4d; --down:#b3261e; color-scheme: light; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#0f1115; --fg:#eceef2; --muted:#8a909c; --line:#2a2e37; --accent:#ffd23f; --up:#5fd39a; --down:#ff8a80; color-scheme: dark; }
+}
+body { margin:0; background:var(--bg); color:var(--fg); font:400 15px/1.5 "IBM Plex Sans", system-ui, sans-serif;
+  padding: 24px max(16px, env(safe-area-inset-right,0px)) 48px max(16px, env(safe-area-inset-left,0px)); }
+header, .wrap { max-width:1040px; margin:0 auto; }
+h1 { font:800 2rem/1.1 "Bricolage Grotesque", system-ui, sans-serif; margin:0 0 14px; }
+.totals { display:flex; flex-wrap:wrap; gap:12px 28px; margin-bottom:24px; }
+.label { color:var(--muted); font-size:.8rem; text-transform:uppercase; letter-spacing:.06em; }
+.value { font:600 1.5rem/1.2 "Bricolage Grotesque", system-ui, sans-serif; font-variant-numeric:tabular-nums; }
+.hi .value { color:var(--accent); }
+.wrap { overflow-x:auto; min-width:0; }
+table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+th, td { padding:10px 12px; border-bottom:1px solid var(--line); text-align:left; vertical-align:middle; }
+th { color:var(--muted); font-size:.75rem; text-transform:uppercase; letter-spacing:.05em; font-weight:500; white-space:nowrap; }
+.r { text-align:right; }
+td.img img { width:56px; height:auto; border-radius:4px; display:block; }
+.name { font-weight:600; }
+.meta { color:var(--muted); font-size:.85rem; }
+.up { color:var(--up); } .down { color:var(--down); }
+.status { color:var(--muted); padding:32px 0; text-align:center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Collection Pokémon</h1>
+  <div class="totals" id="totals"></div>
+</header>
+<div class="wrap" id="list"><p class="status">Chargement…</p></div>
+
+<script>
+const fmt = v => (v == null || isNaN(v)) ? "—" : v.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+const signed = v => (v == null || isNaN(v)) ? "—" : (v > 0 ? "+" : "") + fmt(v);
+
+fetch("data/cards.json").then(r => r.json()).then(({ updated, cards }) => {
+  let now = 0, paid = 0, nowCount = 0;
+  const rows = cards.map(c => {
+    const gain = c.prix_marche != null ? c.prix_marche - c.prix_paye : null;
+    if (c.prix_marche != null) { now += c.prix_marche; nowCount++; }
+    paid += c.prix_paye;
+    const cls = gain == null ? "" : (gain >= 0 ? "up" : "down");
+    return `<tr>
+      <td class="img">${c.image ? `<img src="${c.image}" alt="">` : ""}</td>
+      <td><div class="name"></div><div class="meta"></div></td>
+      <td class="r">${fmt(c.prix_paye)}</td>
+      <td class="r">${fmt(c.prix_marche)}</td>
+      <td class="r ${cls}">${signed(gain)}</td>
+      <td class="r">${fmt(c.ccc10)}</td>
+      <td class="r">${fmt(c.ccc95)}</td>
+      <td class="r">${fmt(c.ccc9)}</td>
+    </tr>`;
+  });
+  const table = `<table><thead><tr>
+    <th></th><th>Carte</th><th class="r">Payé</th><th class="r">Marché</th><th class="r">Écart</th>
+    <th class="r">CCC 10 (est.)</th><th class="r">CCC 9.5 (est.)</th><th class="r">CCC 9 (est.)</th>
+  </tr></thead><tbody></tbody></table>`;
+  const list = document.getElementById("list");
+  list.innerHTML = table;
+  const tbody = list.querySelector("tbody");
+  cards.forEach((c, i) => {
+    tbody.insertAdjacentHTML("beforeend", rows[i]);
+    const tr = tbody.lastElementChild;
+    tr.querySelector(".name").textContent = c.nom;
+    tr.querySelector(".meta").textContent = [c.set, c.numero].filter(Boolean).join(" · ");
+  });
+  const gain = nowCount ? now - paid : null;
+  document.getElementById("totals").innerHTML = `
+    <div class="hi"><div class="label">Valeur actuelle</div><div class="value">${nowCount ? fmt(now) : "—"}</div></div>
+    <div><div class="label">Payé</div><div class="value">${fmt(paid)}</div></div>
+    <div><div class="label">Écart</div><div class="value">${signed(gain)}</div></div>
+    <div><div class="label">Mis à jour</div><div class="value" style="font-size:1rem">${updated || "—"}</div></div>`;
+}).catch(() => {
+  document.getElementById("list").innerHTML = '<p class="status">Impossible de charger les cartes.</p>';
+});
+</script>
+</body>
+</html>

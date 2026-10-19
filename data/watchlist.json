@@ -1,0 +1,20 @@
+[
+  {
+    "nom": "Zekrom ex BWR",
+    "nom_api": "Zekrom",
+    "set_api": "Black Bolt",
+    "numero": "172",
+    "set_affiche": "Écarlate et Violet, Foudre Noire",
+    "prix_paye": 240,
+    "ccc": {"10": 700, "9.5": 450, "9": 300}
+  },
+  {
+    "nom": "Dracaufeu ex alternatif",
+    "nom_api": "Charizard ex",
+    "set_api": "151",
+    "numero": "199",
+    "set_affiche": "151",
+    "prix_paye": 5.99,
+    "ccc": {"10": 800, "9.5": 500, "9": 350}
+  }
+]
