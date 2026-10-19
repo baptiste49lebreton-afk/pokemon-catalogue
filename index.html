@@ -5,18 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow, noarchive, noimageindex">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https://assets.tcgdex.net; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https://assets.tcgdex.net; connect-src 'self' https://api.github.com; base-uri 'none'; form-action 'none'">
 <title>Collection</title>
 <style>
-:root { --bg:#f4f3ef; --fg:#16181d; --muted:#6c717c; --line:#d9d7d0; --accent:#b88700; --up:#1f7a4d; --down:#b3261e; --field:#fff; color-scheme: light; }
+:root { --bg:#f4f3ef; --fg:#16181d; --muted:#6c717c; --line:#d9d7d0; --accent:#b88700; --up:#1f7a4d; --down:#b3261e; --field:#fff; --panel:#ebe9e2; color-scheme: light; }
 @media (prefers-color-scheme: dark) {
-  :root { --bg:#0f1115; --fg:#eceef2; --muted:#8a909c; --line:#2a2e37; --accent:#ffd23f; --up:#5fd39a; --down:#ff8a80; --field:#181b21; color-scheme: dark; }
+  :root { --bg:#0f1115; --fg:#eceef2; --muted:#8a909c; --line:#2a2e37; --accent:#ffd23f; --up:#5fd39a; --down:#ff8a80; --field:#181b21; --panel:#161920; color-scheme: dark; }
 }
 body { margin:0; background:var(--bg); color:var(--fg); font:400 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   padding: 24px max(16px, env(safe-area-inset-right,0px)) 48px max(16px, env(safe-area-inset-left,0px)); }
-header, .wrap { max-width:1040px; margin:0 auto; }
+header, .wrap, .panel { max-width:1040px; margin:0 auto; }
 h1 { font:800 2rem/1.1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; margin:0 0 14px; }
-.totals { display:flex; flex-wrap:wrap; gap:12px 28px; margin-bottom:24px; }
+.totals { display:flex; flex-wrap:wrap; gap:12px 28px; margin-bottom:20px; }
 .label { color:var(--muted); font-size:.8rem; text-transform:uppercase; letter-spacing:.06em; }
 .value { font:600 1.5rem/1.2 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-variant-numeric:tabular-nums; }
 .hi .value { color:var(--accent); }
@@ -29,12 +29,22 @@ td.img img { width:56px; height:auto; border-radius:4px; display:block; }
 .name { font-weight:600; }
 .meta { color:var(--muted); font-size:.85rem; }
 .up { color:var(--up); } .down { color:var(--down); }
-.status { color:var(--muted); padding:32px 0; text-align:center; }
+tr.pending { opacity:.55; }
 .login { max-width:340px; margin:12vh auto 0; display:flex; flex-direction:column; gap:12px; }
-.login input { font:inherit; padding:12px 14px; border:1px solid var(--line); border-radius:8px; background:var(--field); color:var(--fg); }
-.login button { font:600 1rem system-ui, sans-serif; padding:12px 14px; border:0; border-radius:8px; background:var(--accent); color:#111; cursor:pointer; }
-.login button:disabled { opacity:.6; cursor:wait; }
+input, select { font:inherit; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--field); color:var(--fg); min-width:0; }
+button { font:600 .95rem system-ui, sans-serif; padding:10px 14px; border:0; border-radius:8px; background:var(--accent); color:#111; cursor:pointer; }
+button.ghost { background:transparent; color:var(--fg); border:1px solid var(--line); }
+button.x { background:transparent; color:var(--muted); padding:4px 8px; border:0; font-size:1.1rem; }
+button:disabled { opacity:.6; cursor:wait; }
 .err { color:var(--down); min-height:1.4em; margin:0; }
+.bar { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+.status { color:var(--muted); min-height:1.4em; margin:0 0 12px; }
+.panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
+.panel h2 { font:700 1.1rem system-ui, sans-serif; margin:0 0 12px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:10px 12px; }
+.grid label { display:flex; flex-direction:column; gap:4px; font-size:.8rem; color:var(--muted); }
+.row { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+.help { color:var(--muted); font-size:.85rem; margin:8px 0 0; }
 [hidden] { display:none !important; }
 </style>
 </head>
@@ -50,25 +60,148 @@ td.img img { width:56px; height:auto; border-radius:4px; display:block; }
   <header>
     <h1>Collection Pokémon</h1>
     <div class="totals" id="totals"></div>
+    <div class="bar">
+      <button type="button" id="btnAdd">+ Ajouter</button>
+      <button type="button" class="ghost" id="btnRefresh">Actualiser</button>
+      <button type="button" class="ghost" id="btnToken">Accès</button>
+    </div>
+    <p class="status" id="status" role="status"></p>
   </header>
+
+  <form class="panel" id="addPanel" hidden autocomplete="off">
+    <h2>Ajouter</h2>
+    <div class="grid">
+      <label>Type
+        <select id="fType"><option value="carte">Carte</option><option value="scelle">Produit scellé</option></select>
+      </label>
+      <label>Nom <input id="fNom" required maxlength="120" placeholder="ex. Dracaufeu ex"></label>
+      <label>Extension <input id="fSet" maxlength="120" placeholder="ex. 151 ou Foudre Noire"></label>
+      <label data-for="carte">Numéro <input id="fNum" maxlength="20" inputmode="text" placeholder="ex. 199"></label>
+      <label>Prix payé (€) <input id="fPaye" inputmode="decimal" placeholder="ex. 5,99"></label>
+      <label data-for="scelle" hidden>Prix du marché (€) <input id="fMarche" inputmode="decimal" placeholder="ex. 140"></label>
+      <label data-for="carte">CCC 10 (€) <input id="fC10" inputmode="decimal"></label>
+      <label data-for="carte">CCC 9.5 (€) <input id="fC95" inputmode="decimal"></label>
+      <label data-for="carte">CCC 9 (€) <input id="fC9" inputmode="decimal"></label>
+    </div>
+    <p class="help" id="addHelp">Pour une carte : nom, extension et numéro suffisent. Le prix du marché est cherché tout seul.</p>
+    <div class="row">
+      <button type="submit" id="fGo">Enregistrer</button>
+      <button type="button" class="ghost" id="fCancel">Annuler</button>
+    </div>
+    <p class="err" id="fErr" role="alert"></p>
+  </form>
+
+  <form class="panel" id="tokenPanel" hidden autocomplete="off">
+    <h2>Accès pour ajouter depuis le site</h2>
+    <p class="help" style="margin-top:0">Colle ici la clé d'accès GitHub (jeton) de ce dépôt. Elle reste uniquement dans ce navigateur et ne peut pas modifier le code du site.</p>
+    <div class="row" style="margin-top:10px">
+      <input type="password" id="tokenIn" placeholder="github_pat_…" style="flex:1; min-width:200px" autocomplete="off">
+      <button type="submit">Enregistrer</button>
+      <button type="button" class="ghost" id="tokenClear">Effacer</button>
+      <button type="button" class="ghost" id="tokenClose">Fermer</button>
+    </div>
+    <p class="help" id="tokenState"></p>
+  </form>
+
   <div class="wrap" id="list"></div>
 </main>
 
 <script>
 const fmt = v => (v == null || isNaN(v)) ? "—" : v.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
 const signed = v => (v == null || isNaN(v)) ? "—" : (v > 0 ? "+" : "") + fmt(v);
-const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const enc = new TextEncoder();
+const fromB64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const toB64 = u8 => { let s = ""; u8.forEach(b => s += String.fromCharCode(b)); return btoa(s); };
 
+// Dépôt GitHub déduit de l'adresse du site (https://<compte>.github.io/<dépôt>/)
+const OWNER = location.hostname.endsWith(".github.io") ? location.hostname.split(".")[0] : "owner";
+const REPO = location.pathname.split("/")[1] || "repo";
+const API = "https://api.github.com/repos/" + OWNER + "/" + REPO;
+
+const state = { password: null, vault: null, cards: [], busy: false };
+
+// ---------- chiffrement ----------
+async function deriveKey(password, salt, iterations, usage) {
+  const base = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations, hash: "SHA-256" },
+    base, { name: "AES-GCM", length: 256 }, false, [usage]);
+}
 async function decryptVault(blob, password) {
-  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
-  const key = await crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt: b64(blob.salt), iterations: blob.iter, hash: "SHA-256" },
-    base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
-  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(blob.iv) }, key, b64(blob.data));
+  const key = await deriveKey(password, fromB64(blob.salt), blob.iter, "decrypt");
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(blob.iv) }, key, fromB64(blob.data));
   return JSON.parse(new TextDecoder().decode(plain));
 }
+async function encryptJSON(obj, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(password, salt, 600000, "encrypt");
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(JSON.stringify(obj)));
+  return { v: 1, iter: 600000, salt: toB64(salt), iv: toB64(iv), data: toB64(new Uint8Array(ct)) };
+}
 
+// ---------- jeton d'accès (stocké dans ce navigateur seulement) ----------
+const getToken = () => { try { return localStorage.getItem("gh") || ""; } catch (e) { return ""; } };
+const setToken = t => { try { t ? localStorage.setItem("gh", t) : localStorage.removeItem("gh"); } catch (e) {} };
+
+// ---------- lecture / envoi ----------
+async function loadVault() {
+  const token = getToken();
+  const url = token ? API + "/contents/data/vault.json?ref=main" : "data/vault.json";
+  const headers = token ? { Authorization: "Bearer " + token, Accept: "application/vnd.github.raw+json" } : {};
+  let r = await fetch(url, { cache: "no-store", headers });
+  if (!r.ok && token) r = await fetch("data/vault.json", { cache: "no-store" });
+  if (!r.ok) throw new Error("vault");
+  const blob = await r.json();
+  try { return await decryptVault(blob, state.password); } catch (e) { throw new Error("password"); }
+}
+
+async function send(msg) {
+  const token = getToken();
+  if (!token) { openToken(); throw new Error("notoken"); }
+  const blob = await encryptJSON(msg, state.password);
+  const r = await fetch(API + "/actions/workflows/update.yml/dispatches", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, Accept: "application/vnd.github+json",
+               "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json" },
+    body: JSON.stringify({ ref: "main", inputs: { payload: JSON.stringify(blob) } })
+  });
+  if (r.status !== 204) throw new Error([401, 403, 404].includes(r.status) ? "token" : "github");
+}
+
+async function waitFor(check) {
+  for (let i = 0; i < 40; i++) {
+    await sleep(6000);
+    try { const v = await loadVault(); if (check(v)) return v; } catch (e) {}
+  }
+  return null;
+}
+
+function setStatus(t) { $("status").textContent = t || ""; }
+function explain(e) {
+  return e.message === "token" ? "Accès refusé : le jeton est absent, expiré ou n'a pas les bons droits (voir « Accès »)."
+    : e.message === "notoken" ? "Ajoute d'abord ton jeton d'accès (bouton « Accès »)."
+    : "L'envoi a échoué. Réessaie dans un instant.";
+}
+
+async function change(msg, optimistic, check) {
+  if (state.busy) { setStatus("Une modification est déjà en cours, patiente un instant."); return false; }
+  state.busy = true;
+  try {
+    await send(msg);
+  } catch (e) {
+    setStatus(explain(e)); state.busy = false; return false;
+  }
+  state.cards = optimistic(state.cards); draw();
+  setStatus("Envoyé. Enregistrement en cours, compte 1 minute environ…");
+  const v = await waitFor(check);
+  if (v) { state.vault = v; state.cards = v.cards.cards; draw(v.cards.updated); setStatus("Enregistré."); }
+  else setStatus("Pas encore confirmé. Clique sur « Actualiser » dans une minute ou deux.");
+  state.busy = false;
+  return true;
+}
+
+// ---------- affichage ----------
 function el(tag, cls, text) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -76,12 +209,15 @@ function el(tag, cls, text) {
   return e;
 }
 
-function render({ updated, cards }) {
+let lastUpdated = null;
+function draw(updated) {
+  if (updated) lastUpdated = updated;
+  const cards = state.cards;
   let now = 0, paid = 0, nowCount = 0;
   const table = el("table");
   const head = el("tr");
-  [["", ""], ["Carte", ""], ["Payé", "r"], ["Marché", "r"], ["Écart", "r"],
-   ["CCC 10 (est.)", "r"], ["CCC 9.5 (est.)", "r"], ["CCC 9 (est.)", "r"]]
+  [["", ""], ["Élément", ""], ["Payé", "r"], ["Marché", "r"], ["Écart", "r"],
+   ["CCC 10 (est.)", "r"], ["CCC 9.5 (est.)", "r"], ["CCC 9 (est.)", "r"], ["", ""]]
     .forEach(([t, c]) => head.append(el("th", c, t)));
   const thead = el("thead"); thead.append(head);
   const tbody = el("tbody");
@@ -90,23 +226,30 @@ function render({ updated, cards }) {
   cards.forEach(c => {
     const gain = c.prix_marche != null ? c.prix_marche - c.prix_paye : null;
     if (c.prix_marche != null) { now += c.prix_marche; nowCount++; }
-    paid += c.prix_paye;
-    const tr = el("tr");
+    paid += c.prix_paye || 0;
+    const tr = el("tr", c.pending ? "pending" : "");
     const imgCell = el("td", "img");
     if (c.image && c.image.startsWith("https://assets.tcgdex.net/")) {
       const img = el("img"); img.src = c.image; img.alt = ""; img.referrerPolicy = "no-referrer";
       imgCell.append(img);
     }
     const info = el("td");
-    info.append(el("div", "name", c.nom), el("div", "meta", [c.set, c.numero].filter(Boolean).join(" · ")));
+    const metaParts = [c.type === "scelle" ? "Scellé" : null, c.set, c.numero].filter(Boolean).join(" · ");
+    info.append(el("div", "name", c.nom), el("div", "meta", metaParts));
+    const del = el("td", "r");
+    if (c.uid && !c.pending) {
+      const b = el("button", "x", "✕"); b.type = "button"; b.title = "Supprimer"; b.setAttribute("aria-label", "Supprimer " + c.nom);
+      b.addEventListener("click", () => removeItem(c));
+      del.append(b);
+    }
     tr.append(imgCell, info,
       el("td", "r", fmt(c.prix_paye)), el("td", "r", fmt(c.prix_marche)),
       el("td", "r " + (gain == null ? "" : gain >= 0 ? "up" : "down"), signed(gain)),
-      el("td", "r", fmt(c.ccc10)), el("td", "r", fmt(c.ccc95)), el("td", "r", fmt(c.ccc9)));
+      el("td", "r", fmt(c.ccc10)), el("td", "r", fmt(c.ccc95)), el("td", "r", fmt(c.ccc9)), del);
     tbody.append(tr);
   });
 
-  const list = $("list"); list.replaceChildren(table);
+  $("list").replaceChildren(table);
   const tile = (label, value, cls, small) => {
     const d = el("div", cls); d.append(el("div", "label", label));
     const v = el("div", "value", value); if (small) v.style.fontSize = "1rem";
@@ -116,14 +259,89 @@ function render({ updated, cards }) {
   $("totals").replaceChildren(
     tile("Valeur actuelle", nowCount ? fmt(now) : "—", "hi"),
     tile("Payé", fmt(paid)), tile("Écart", signed(gain)),
-    tile("Mis à jour", updated || "—", "", true));
+    tile("Mis à jour", lastUpdated || "—", "", true));
 }
 
+// ---------- actions ----------
+function num(v) {
+  const s = String(v || "").trim().replace(",", ".");
+  if (!s) return null;
+  const f = parseFloat(s);
+  return isNaN(f) || f < 0 ? NaN : f;
+}
+const newUid = () => Array.from(crypto.getRandomValues(new Uint8Array(5)), b => b.toString(16).padStart(2, "0")).join("");
+
+function toggleType() {
+  const t = $("fType").value;
+  document.querySelectorAll("#addPanel [data-for]").forEach(l => l.hidden = l.dataset.for !== t);
+  $("addHelp").textContent = t === "carte"
+    ? "Pour une carte : nom, extension et numéro suffisent. Le prix du marché est cherché tout seul."
+    : "Pour un produit scellé : indique ce que tu as payé et son prix du marché actuel (à saisir, aucun site gratuit ne le donne).";
+}
+
+async function addItem(ev) {
+  ev.preventDefault();
+  const err = $("fErr"); err.textContent = "";
+  const type = $("fType").value, nom = $("fNom").value.trim(), set = $("fSet").value.trim();
+  const paye = num($("fPaye").value);
+  if (!nom) { err.textContent = "Le nom est obligatoire."; return; }
+  if (Number.isNaN(paye)) { err.textContent = "Prix payé invalide."; return; }
+  const uid = newUid();
+  let entry, placeholder;
+  if (type === "carte") {
+    const numero = $("fNum").value.trim();
+    if (!set || !numero) { err.textContent = "Pour une carte, l'extension et le numéro sont obligatoires."; return; }
+    const ccc = {};
+    for (const [k, id] of [["10", "fC10"], ["9.5", "fC95"], ["9", "fC9"]]) {
+      const v = num($(id).value);
+      if (Number.isNaN(v)) { err.textContent = "Un prix CCC est invalide."; return; }
+      if (v != null) ccc[k] = v;
+    }
+    entry = { type, uid, nom, set_api: set, set_affiche: set, numero, ccc };
+    if (paye != null) entry.prix_paye = paye;
+    placeholder = { uid, type, nom, set, numero, prix_paye: paye == null ? 5.99 : paye, prix_marche: null,
+                    ccc10: ccc["10"] ?? null, ccc95: ccc["9.5"] ?? null, ccc9: ccc["9"] ?? null, pending: true };
+  } else {
+    const marche = num($("fMarche").value);
+    if (paye == null || Number.isNaN(paye)) { err.textContent = "Indique le prix payé du produit scellé."; return; }
+    if (Number.isNaN(marche)) { err.textContent = "Prix du marché invalide."; return; }
+    entry = { type, uid, nom, set_affiche: set, prix_paye: paye };
+    if (marche != null) entry.prix_marche_manuel = marche;
+    placeholder = { uid, type, nom, set, numero: null, prix_paye: paye, prix_marche: marche, ccc10: null, ccc95: null, ccc9: null, pending: true };
+  }
+  $("fGo").disabled = true;
+  const ok = await change({ action: "add", entry }, cards => cards.concat([placeholder]),
+    v => v.watchlist.some(e => e.uid === uid));
+  $("fGo").disabled = false;
+  if (ok) { $("addPanel").reset(); toggleType(); $("addPanel").hidden = true; }
+}
+
+async function removeItem(c) {
+  if (!confirm("Supprimer « " + c.nom + " » du suivi ?")) return;
+  await change({ action: "delete", uid: c.uid }, cards => cards.filter(x => x.uid !== c.uid),
+    v => !v.watchlist.some(e => e.uid === c.uid));
+}
+
+function openToken() {
+  $("tokenPanel").hidden = false;
+  $("tokenState").textContent = getToken() ? "Un jeton est enregistré dans ce navigateur." : "Aucun jeton enregistré.";
+  $("tokenIn").focus();
+}
+
+async function refresh() {
+  setStatus("Actualisation…");
+  try {
+    const v = await loadVault();
+    state.vault = v; state.cards = v.cards.cards; draw(v.cards.updated); setStatus("À jour.");
+  } catch (e) { setStatus("Impossible d'actualiser pour le moment."); }
+}
+
+// ---------- démarrage ----------
 async function unlock(password) {
-  const blob = await fetch("data/vault.json", { cache: "no-store" }).then(r => { if (!r.ok) throw new Error("vault"); return r.json(); });
-  let vault;
-  try { vault = await decryptVault(blob, password); } catch (e) { throw new Error("password"); }
-  render(vault.cards);
+  state.password = password;
+  const v = await loadVault();
+  state.vault = v; state.cards = v.cards.cards;
+  draw(v.cards.updated);
   $("login").hidden = true; $("app").hidden = false;
 }
 
@@ -135,15 +353,31 @@ $("login").addEventListener("submit", async ev => {
     await unlock(pw);
     try { sessionStorage.setItem("k", pw); } catch (e) {}
   } catch (e) {
+    state.password = null;
     err.textContent = e.message === "password" ? "Mot de passe incorrect." : "Données indisponibles pour le moment.";
   } finally {
     btn.disabled = false; $("pw").value = "";
   }
 });
 
+$("btnAdd").addEventListener("click", () => { $("addPanel").hidden = !$("addPanel").hidden; if (!$("addPanel").hidden) $("fNom").focus(); });
+$("fCancel").addEventListener("click", () => { $("addPanel").hidden = true; });
+$("fType").addEventListener("change", toggleType);
+$("addPanel").addEventListener("submit", addItem);
+$("btnRefresh").addEventListener("click", refresh);
+$("btnToken").addEventListener("click", openToken);
+$("tokenClose").addEventListener("click", () => { $("tokenPanel").hidden = true; });
+$("tokenClear").addEventListener("click", () => { setToken(""); $("tokenState").textContent = "Jeton effacé de ce navigateur."; });
+$("tokenPanel").addEventListener("submit", ev => {
+  ev.preventDefault();
+  const t = $("tokenIn").value.trim();
+  if (t) { setToken(t); $("tokenIn").value = ""; $("tokenState").textContent = "Jeton enregistré dans ce navigateur."; }
+});
+toggleType();
+
 try {
   const saved = sessionStorage.getItem("k");
-  if (saved) unlock(saved).catch(() => { try { sessionStorage.removeItem("k"); } catch (e) {} });
+  if (saved) unlock(saved).catch(() => { state.password = null; try { sessionStorage.removeItem("k"); } catch (e) {} });
 } catch (e) {}
 </script>
 </body>
