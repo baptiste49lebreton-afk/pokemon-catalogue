@@ -312,6 +312,7 @@ def main():
         old = previous.get(entry["uid"]) or previous.get(entry["nom"]) or {}
         cid = card["id"] if card else (old.get("id") or entry["nom"])
         price_cm = best_price(card) if card else None
+        cm_id = (((card or {}).get("pricing") or {}).get("cardmarket") or {}).get("idProduct") or old.get("cm_id")
         image = f"{card['image']}/low.webp" if card and card.get("image") else None
         manual, auto = entry.get("prix_fr"), entry.get("fr_auto") or {}
         try:
@@ -342,6 +343,7 @@ def main():
             "prix_paye": entry.get("prix_paye", PRIX_BOOSTER),
             "prix_marche": price,
             "prix_cm": price_cm,
+            "cm_id": cm_id,
             "source": source,
             "prix_fr": manual,
             "fr_n": fr_n,
