@@ -110,9 +110,13 @@ def ct_get(path, token, params=None):
             if exc.code == 429 and attempt < 3:  # trop de requêtes : on patiente
                 time.sleep(2 + attempt * 3)
                 continue
+            try:
+                corps = exc.read(300).decode("utf-8", "replace").replace("\n", " ")
+            except Exception:
+                corps = ""
             if exc.code in (401, 403):
-                raise CtError("jeton CardTrader refusé (vérifier le secret CARDTRADER_TOKEN)") from exc
-            raise CtError(f"{path} -> HTTP {exc.code}") from exc
+                raise CtError(f"{path} -> HTTP {exc.code} (jeton refusé ou accès bloqué) : {corps}") from exc
+            raise CtError(f"{path} -> HTTP {exc.code} : {corps}") from exc
         except Exception as exc:
             if attempt < 3:
                 time.sleep(2)
