@@ -190,10 +190,10 @@ button.ic svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-
       <label>Numéro <input id="fNum" maxlength="20" inputmode="text" placeholder="ex. 199"></label>
       <label>Prix payé (€) <input id="fPaye" inputmode="decimal" placeholder="vide = 5,99"></label>
       <label>Quantité <input id="fQ" inputmode="numeric" placeholder="1"></label>
-      <label>Prix français (€) <input id="fFr" inputmode="decimal" placeholder="vide = automatique"></label>
-      <label>CCC 10 (€) <input id="fC10" inputmode="decimal"></label>
-      <label>CCC 9.5 (€) <input id="fC95" inputmode="decimal"></label>
-      <label>CCC 9 (€) <input id="fC9" inputmode="decimal"></label>
+      <label>Prix actuel (€) <input id="fFr" inputmode="decimal" placeholder="vide = automatique"></label>
+      <label>CCC 10 (€) <input id="fC10" inputmode="decimal" placeholder="vide = estimé"></label>
+      <label>CCC 9.5 (€) <input id="fC95" inputmode="decimal" placeholder="vide = estimé"></label>
+      <label>CCC 9 (€) <input id="fC9" inputmode="decimal" placeholder="vide = estimé"></label>
     </div>
     <p class="help">Écris ou dis juste le nom (ex. « Zekrom » ou « Zekrom ex BWR », avec le numéro si tu veux) : la liste des cartes avec leurs images apparaît en dessous, fais-la défiler et touche la tienne. L'extension et le numéro se remplissent tout seuls. Le prix du marché est ensuite mis à jour chaque matin.</p>
     <div class="row">
@@ -224,12 +224,12 @@ button.ic svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-
       <div class="grid">
         <label>Prix payé (€) <input id="eP" inputmode="decimal" placeholder="vide = 5,99"></label>
         <label>Quantité <input id="eQ" inputmode="numeric" placeholder="1"></label>
-        <label>Prix français (€) <input id="eFr" inputmode="decimal" placeholder="vide = automatique"></label>
-        <label>CCC 10 (€) <input id="eC10" inputmode="decimal"></label>
-        <label>CCC 9.5 (€) <input id="eC95" inputmode="decimal"></label>
-        <label>CCC 9 (€) <input id="eC9" inputmode="decimal"></label>
+        <label>Prix actuel (€) <input id="eFr" inputmode="decimal" placeholder="vide = automatique"></label>
+        <label>CCC 10 (€) <input id="eC10" inputmode="decimal" placeholder="vide = estimé"></label>
+        <label>CCC 9.5 (€) <input id="eC95" inputmode="decimal" placeholder="vide = estimé"></label>
+        <label>CCC 9 (€) <input id="eC9" inputmode="decimal" placeholder="vide = estimé"></label>
       </div>
-      <div class="row"><button type="submit" id="eSave">Enregistrer les modifications</button><a id="eLink" class="meta" target="_blank" rel="noopener noreferrer" hidden style="text-decoration:underline">offres en français ↗</a><span class="err" id="eErr" role="alert"></span></div>
+      <div class="row"><button type="submit" id="eSave">Enregistrer les modifications</button><a id="eLink" class="meta" target="_blank" rel="noopener noreferrer" hidden style="text-decoration:underline">voir sur Cardmarket ↗</a><span class="err" id="eErr" role="alert"></span></div>
     </form>
     <div class="chartbar">
       <div class="delta" id="chartDelta"></div>
@@ -381,6 +381,14 @@ function openOnClick(node, c) {
   node.addEventListener("click", ev => { if (!ev.target.closest("button, input, a")) openChart(c.id); });
   node.addEventListener("keydown", ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === node) { ev.preventDefault(); openChart(c.id); } });
 }
+const CCC_COEF = { "10": 1.8, "9.5": 1.4, "9": 1.15 };      // même estimation que le script du matin
+const cccEst = (k, price) => price == null ? null : Math.round(price * CCC_COEF[k] * 100) / 100;
+const isAuto = (c, k) => (c.ccc_auto || []).includes(k);
+function cccTd(c, k, val) {
+  const auto = val != null && isAuto(c, k), td = moneyTd(auto ? "≈ " + fmt(val) : fmt(val));
+  if (auto) td.style.color = "var(--muted)";
+  return td;
+}
 function moneyTd(text) { const td = el("td", "r"); td.append(el("div", "money", text)); return td; }
 function gridCard(c, q, gain) {
   const d = el("div", "gcard" + (c.pending ? " pending" : ""));
@@ -399,7 +407,7 @@ function gridCard(c, q, gain) {
   }
   d.append(pic, el("div", "gname", c.nom), el("div", "gprice money", fmt(c.prix_marche)));
   if (gain != null) d.append(el("div", "ggain money " + (gain >= 0 ? "up" : "down"), signed(gain) + (q > 1 ? " · pour " + q : "")));
-  const cap = c.source === "manuel" ? "prix FR saisi" : c.source === "fr" ? "prix FR relevé" : "";
+  const cap = c.source === "manuel" ? "prix saisi" : c.source === "fr" ? "prix relevé" : "";
   if (cap) d.append(el("div", "meta", cap));
   return d;
 }
@@ -409,9 +417,9 @@ function draw(updated) {
   const cards = state.cards;
   const table = el("table");
   const head = el("tr");
-  [["", ""], ["Élément", ""], ["Payé", "r"], ["Marché", "r"], ["Écart", "r"],
+  [["", ""], ["Élément", ""], ["Payé", "r"], ["Prix actuel", "r"], ["Écart", "r"],
    ["CCC 10 (est.)", "r"], ["CCC 9.5 (est.)", "r"], ["CCC 9 (est.)", "r"], ["", ""]]
-    .forEach(([t, c]) => { const th = el("th", c, t); if (t === "Marché") th.title = "Prix de base : Cardmarket, toutes langues (automatique chaque matin). Pour avoir le vrai prix en français : lien « offres en français » (Cardmarket), puis crayon ✎ pour saisir ton prix."; head.append(th); });
+    .forEach(([t, c]) => { const th = el("th", c, t); if (t === "Prix actuel") th.title = "Prix Cardmarket mis à jour automatiquement chaque matin. Tu peux le remplacer avec le crayon ✎ : il ne bouge alors plus tout seul. Les prix CCC sont des estimations, sauf ceux que tu saisis."; head.append(th); });
   const thead = el("thead"); thead.append(head);
   const tbody = el("tbody");
   table.append(thead, tbody);
@@ -442,29 +450,29 @@ function draw(updated) {
     }
     const mk = el("td", "r");
     mk.append(el("div", "money", fmt(c.prix_marche)));
-    const cap = c.source === "manuel" ? "prix FR saisi"
-      : c.source === "fr" ? "prix FR relevé"
-      : c.prix_marche != null && c.type !== "scelle" ? "auto · toutes langues" : "";
+    const cap = c.source === "manuel" ? "prix saisi"
+      : c.source === "fr" ? "prix relevé"
+      : c.prix_marche != null && c.type !== "scelle" ? "auto · Cardmarket" : "";
     if (cap) {
       const m = el("div", "meta", cap); m.style.whiteSpace = "nowrap";
       if (c.uid && !c.pending && c.type !== "scelle") {
-        const b = el("button", "x", "✎"); b.type = "button"; b.title = "Saisir ton prix français à la main"; b.setAttribute("aria-label", "Saisir un prix français pour " + c.nom);
+        const b = el("button", "x", "✎"); b.type = "button"; b.title = "Saisir le prix actuel à la main"; b.setAttribute("aria-label", "Saisir le prix actuel de " + c.nom);
         b.addEventListener("click", () => editFr(c, mk));
         m.append(" ", b);
       }
       mk.append(m);
     }
     if (c.type !== "scelle" && !c.pending && c.cm_id) {
-      const a = el("a", "meta", "offres en français ↗");
+      const a = el("a", "meta", "voir sur Cardmarket ↗");
       a.href = cmLink(c);
       a.target = "_blank"; a.rel = "noopener noreferrer"; a.style.cssText = "display:block; white-space:nowrap; color:var(--muted); text-decoration:underline";
-      a.title = "Ouvre la page Cardmarket de cette carte, déjà filtrée sur les offres en français";
+      a.title = "Ouvre la page Cardmarket de cette carte";
       mk.append(a);
     }
     const g = el("td", "r " + (gain == null ? "" : gain >= 0 ? "up" : "down")); g.append(el("div", "money", signed(gain)));
     if (q > 1 && gain != null) g.append(el("div", "meta", "pour " + q));
     tr.append(imgCell, info, moneyTd(fmt(c.prix_paye)), mk, g,
-      moneyTd(fmt(c.ccc10)), moneyTd(fmt(c.ccc95)), moneyTd(fmt(c.ccc9)), del);
+      cccTd(c, "10", c.ccc10), cccTd(c, "9.5", c.ccc95), cccTd(c, "9", c.ccc9), del);
     tbody.append(tr);
   });
 
@@ -491,7 +499,7 @@ function draw(updated) {
   $("updated").textContent = lastUpdated ? "Prix mis à jour le " + fmtDay(lastUpdated) + "." : "";
   renderChart();
 }
-const cmLink = c => "https://www.cardmarket.com/fr/Pokemon/Products?idProduct=" + encodeURIComponent(c.cm_id) + "&language=2";
+const cmLink = c => "https://www.cardmarket.com/fr/Pokemon/Products?idProduct=" + encodeURIComponent(c.cm_id);
 
 // ---------- agrandissement de la carte au survol ----------
 function showZoom(img, src) {
@@ -553,7 +561,7 @@ function fillEdit(c) {
   $("eP").value = v(c.prix_paye === 5.99 ? "" : c.prix_paye);
   $("eQ").value = c.quantite > 1 ? c.quantite : "";
   $("eFr").value = v(c.prix_fr);
-  $("eC10").value = v(c.ccc10); $("eC95").value = v(c.ccc95); $("eC9").value = v(c.ccc9);
+  $("eC10").value = v(isAuto(c, "10") ? null : c.ccc10); $("eC95").value = v(isAuto(c, "9.5") ? null : c.ccc95); $("eC9").value = v(isAuto(c, "9") ? null : c.ccc9);
   $("eErr").textContent = "";
 }
 async function saveEdit(ev) {
@@ -571,10 +579,14 @@ async function saveEdit(ev) {
   const same = (a, b) => (a == null ? null : a) === (b == null ? null : b);
   editUid = null;
   await change({ action: "update_entry", uid: c.uid, fields },
-    cards => cards.map(x => x.uid !== c.uid ? x : Object.assign({}, x, {
-      prix_paye: paye == null ? 5.99 : paye, quantite: qn, prix_fr: fr, ccc10: c10, ccc95: c95, ccc9: c9,
-      source: fr != null ? "manuel" : (x.source === "manuel" ? "cm" : x.source),
-      prix_marche: fr != null ? fr : (x.source === "manuel" && x.prix_cm != null ? x.prix_cm : x.prix_marche) })),
+    cards => cards.map(x => { if (x.uid !== c.uid) return x;
+      const pm = fr != null ? fr : (x.source === "manuel" && x.prix_cm != null ? x.prix_cm : x.prix_marche);
+      const ccc = { "10": c10, "9.5": c95, "9": c9 };
+      return Object.assign({}, x, {
+        prix_paye: paye == null ? 5.99 : paye, quantite: qn, prix_fr: fr,
+        ccc10: c10 != null ? c10 : cccEst("10", pm), ccc95: c95 != null ? c95 : cccEst("9.5", pm), ccc9: c9 != null ? c9 : cccEst("9", pm),
+        ccc_auto: Object.keys(ccc).filter(k => ccc[k] == null),
+        source: fr != null ? "manuel" : (x.source === "manuel" ? "cm" : x.source), prix_marche: pm }); }),
     v => v.watchlist.some(e => e.uid === c.uid && same(e.prix_paye, paye) && (e.quantite || 1) === qn && same(e.prix_fr, fr)
       && same((e.ccc || {})["10"], c10) && same((e.ccc || {})["9.5"], c95) && same((e.ccc || {})["9"], c9)));
   $("eSave").disabled = false;
@@ -610,7 +622,7 @@ function renderChart() {
   $("chartTitle").textContent = card ? "Modifier et suivre le prix" : "Évolution de la valeur";
   $("chartNote").textContent = "Estimation : " + (chartSel === "all"
     ? "chaque carte compte à partir de son premier relevé de prix (un relevé par matin)."
-    : "prix Cardmarket relevé chaque matin (toutes langues), ou ton prix français saisi à la main.")
+    : "prix Cardmarket relevé chaque matin (toutes langues), ou ton prix saisi à la main.")
     + " La ligne en pointillés est ce que tu as investi.";
   if (!cards.length) { plot.replaceChildren(); sum.textContent = "Ajoute une carte pour voir son évolution."; return; }
   if (!pts.length) { plot.replaceChildren(); sum.textContent = "Pas encore de prix enregistré : le premier relevé arrive à la prochaine mise à jour du matin."; return; }
@@ -872,7 +884,7 @@ async function addItem(ev) {
   if (!set || !numero) { err.textContent = "L'extension et le numéro sont obligatoires."; return; }
   if (Number.isNaN(paye)) { err.textContent = "Prix payé invalide."; return; }
   const fr = num($("fFr").value);
-  if (Number.isNaN(fr)) { err.textContent = "Prix français invalide."; return; }
+  if (Number.isNaN(fr)) { err.textContent = "Prix actuel invalide."; return; }
   const qs = $("fQ").value.trim(), qn = qs === "" ? 1 : Number(qs);
   if (!Number.isInteger(qn) || qn < 1 || qn > 999) { err.textContent = "La quantité doit être un nombre entier (1 ou plus)."; return; }
   const ccc = {};
@@ -903,10 +915,10 @@ async function removeItem(c) {
     v => !v.watchlist.some(e => e.uid === c.uid));
 }
 
-// ---------- prix français saisi à la main ----------
+// ---------- prix actuel saisi à la main ----------
 function editFr(c, mk) {
   const form = el("form"); form.style.cssText = "display:flex; gap:6px; justify-content:flex-end; align-items:center; flex-wrap:wrap";
-  const inp = el("input"); inp.inputMode = "decimal"; inp.placeholder = "auto"; inp.setAttribute("aria-label", "Prix français en euros");
+  const inp = el("input"); inp.inputMode = "decimal"; inp.placeholder = "auto"; inp.setAttribute("aria-label", "Prix actuel en euros");
   inp.value = c.prix_fr != null ? String(c.prix_fr).replace(".", ",") : "";
   inp.style.cssText = "width:84px; padding:6px 8px; font:inherit; border-radius:6px; border:1px solid var(--line); background:transparent; color:inherit; text-align:right";
   const ok = el("button", "", "OK"); ok.type = "submit"; ok.style.padding = "6px 10px";
