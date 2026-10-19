@@ -25,7 +25,7 @@ th, td { padding:10px 9px; border-bottom:1px solid var(--line); text-align:left;
 th { color:var(--muted); font-size:.75rem; text-transform:uppercase; letter-spacing:.05em; font-weight:500; white-space:nowrap; }
 .r { text-align:right; }
 td.r { white-space:nowrap; }
-td:nth-child(2) { min-width:150px; }
+#list td:nth-child(2) { min-width:150px; }
 td.img img { width:56px; height:auto; border-radius:4px; display:block; }
 .name { font-weight:600; }
 #zoom { position:fixed; z-index:50; width:270px; height:auto; border-radius:12px; box-shadow:0 12px 34px rgba(0,0,0,.5); pointer-events:none; display:none; background:var(--panel); }
@@ -133,6 +133,19 @@ button.ic svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-
 #ranges { border:0; background:color-mix(in srgb, var(--fg) 7%, transparent); border-radius:12px; padding:4px; gap:2px; }
 #ranges button { border-radius:9px; padding:6px 13px; }
 .legend:empty { display:none; }
+.sim { max-width:none; margin:0 0 16px; }
+.sim .meta { margin:0 0 8px; }
+.simtable { width:100%; font-size:.85rem; }
+.simtable th, .simtable td { padding:7px 4px; }
+.simtable th { text-align:right; }
+.simtable td:first-child { text-align:left; white-space:normal; }
+.simtable td.r { text-align:right; }
+.simtable .tot td { border-top:2px solid var(--line); font-weight:700; }
+.simtable .sub { color:var(--muted); font-size:.75rem; font-weight:400; display:block; }
+@media (min-width: 1180px) {
+  .sim { position:fixed; top:16px; right:16px; bottom:16px; width:350px; overflow-y:auto; z-index:20; margin:0; box-shadow:0 10px 30px rgba(0,0,0,.3); }
+  body.side-open { padding-right: calc(max(16px, env(safe-area-inset-right, 0px)) + 382px); }
+}
 .charthead { flex-wrap:wrap; }
 .chartpanel select { min-width:0; }
 [hidden] { display:none !important; }
@@ -246,6 +259,20 @@ button.ic svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-
     <p class="sum" id="chartNote"></p>
     <details class="tv"><summary>Voir en tableau</summary><div id="chartTable"></div></details>
   </section>
+
+  <aside class="panel sim" id="simPanel" hidden aria-label="Simulation de gradation CCC">
+    <div class="charthead"><h2 id="simTitle">Simulation CCC</h2><button type="button" class="ghost" id="simClose" aria-label="Fermer la simulation">✕</button></div>
+    <p class="meta" id="simSub"></p>
+    <div id="simBody"></div>
+    <details class="tv" open><summary>Hypothèses (modifiables)</summary>
+      <div class="grid" style="margin-top:8px; grid-template-columns:1fr 1fr">
+        <label>Envoi aller (€) <input id="sOut" inputmode="decimal"></label>
+        <label>Retour (€) <input id="sBack" inputmode="decimal"></label>
+        <label style="grid-column:1 / -1">Formule CCC <select id="sSpeed"><option value="regular">Regular (incluse)</option><option value="express">Express (+5 € par carte)</option><option value="super">Super-Express (+20 € par carte)</option></select></label>
+      </div>
+      <p class="help">Les frais d'envoi sont une estimation à corriger avec tes vrais frais (un seul colis aller-retour). Assurance CCC : 2 % de la valeur déclarée (= prix actuel). On suppose que tu revends la carte gradée à la valeur estimée, avant les frais de la plateforme de vente. Tarifs CCC relevés le 20/10/2026.</p>
+    </details>
+  </aside>
 
   <div class="wrap" id="list"></div>
   <img id="zoom" alt="">
@@ -395,6 +422,43 @@ function feeTd(c, q) {
   td.title = "Frais de gradation CCC (Regular) pour une carte valant " + fmt(c.prix_marche) + ".";
   return td;
 }
+const SPEED = { regular: ["Regular", 0], express: ["Express", 5], super: ["Super-Express", 20] };
+const simNum = (k, d) => { const v = parseFloat(String(pref.get(k, "")).replace(",", ".")); return isNaN(v) || v < 0 ? d : v; };
+function renderSim() {
+  const box = $("simPanel");
+  const c = state.cards.find(x => x.id === chartSel && !x.pending);
+  const show = !!(c && view === "list" && !$("chartPanel").hidden && chartSel !== "all" && c.type !== "scelle" && simClosed !== c.id);
+  document.body.classList.toggle("side-open", show);
+  box.hidden = !show;
+  if (!show) return;
+  const q = qOf(c), out = simNum("ship_out", 8), back = simNum("ship_back", 8), sp = SPEED[pref.get("speed", "regular")] || SPEED.regular;
+  $("simTitle").textContent = "Simulation CCC";
+  $("simSub").textContent = c.nom + (q > 1 ? " · " + q + " exemplaires" : "") + " · prix actuel " + fmt(c.prix_marche);
+  const body = $("simBody"), f = cccFee(c.prix_marche);
+  if (!f) { body.replaceChildren(el("p", "help", "Prix actuel indisponible : simulation impossible pour l'instant.")); return; }
+  const cols = [["CCC 10", c.ccc10], ["CCC 9.5", c.ccc95], ["CCC 9", c.ccc9]];
+  const grade = (f.fee + sp[1]) * q, ship = out + back, ins = 0.02 * c.prix_marche * q, raw = c.prix_marche * q;
+  const table = el("table", "simtable"), head = el("tr");
+  head.append(el("th", "", ""), ...cols.map(x => el("th", "", x[0])));
+  const th = el("thead"); th.append(head);
+  const tb = el("tbody");
+  const line = (label, sub, fn, cls) => {
+    const tr = el("tr", cls || ""), td = el("td"); td.append(label);
+    if (sub) td.append(el("span", "sub", sub));
+    tr.append(td);
+    cols.forEach(x => { const v = fn(x[1]); const cell = el("td", "r"); const d = el("div", "money " + (v && v.cls || ""), v ? v.t : "—"); cell.append(d); tr.append(cell); });
+    tb.append(tr);
+  };
+  const ok = v => v != null;
+  line("Valeur estimée", q > 1 ? "× " + q + " exemplaires" : "carte gradée", v => ok(v) && { t: "≈ " + fmt(v * q) });
+  line("Gradation CCC", sp[0] + " · " + fmt(f.fee + sp[1]) + (q > 1 ? " × " + q : ""), v => ok(v) && { t: "− " + fmt(grade) });
+  line("Envoi", "aller " + fmt(out) + " + retour " + fmt(back), v => ok(v) && { t: "− " + fmt(ship) });
+  line("Assurance CCC", "2 % de " + fmt(raw), v => ok(v) && { t: "− " + fmt(ins) });
+  line("Il te reste au final", "", v => ok(v) && { t: fmt(v * q - grade - ship - ins) }, "tot");
+  line("Gain face à la carte non gradée", "au lieu de la vendre " + fmt(raw), v => { if (!ok(v)) return false; const g = v * q - grade - ship - ins - raw; return { t: signed(g), cls: g >= 0 ? "up" : "down" }; });
+  table.append(th, tb);
+  body.replaceChildren(table);
+}
 const isAuto = (c, k) => (c.ccc_auto || []).includes(k);
 function cccTd(c, k, val) {
   const auto = val != null && isAuto(c, k), td = moneyTd(auto ? "≈ " + fmt(val) : fmt(val));
@@ -515,6 +579,7 @@ function draw(updated) {
   const t3 = el("div", "tile small"), s3 = el("div", "sub", T.refs !== T.qty ? T.refs + " référence" + (T.refs > 1 ? "s" : "") : "");
   t3.append(el("div", "label", "Exemplaires"), el("div", "value", T.qty + (T.qty > 1 ? " cartes" : " carte")), s3);
   $("totals").replaceChildren(t1, t2, t3);
+  renderSim();
   $("updated").textContent = lastUpdated ? "Prix mis à jour le " + fmtDay(lastUpdated) + "." : "";
   renderChart();
 }
@@ -543,10 +608,11 @@ const SVGNS = "http://www.w3.org/2000/svg";
 const sv = (tag, attrs) => { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
 const shortDate = d => new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
 let chartSel = "all", animateNext = false;
+let simClosed = null;
 function openChart(id, forceOpen) {
   const p = $("chartPanel");
   if (!forceOpen && !p.hidden && id === chartSel && id !== "all") { closeChart(); return; }
-  chartSel = id; animateNext = true; p.hidden = false;
+  chartSel = id; animateNext = true; p.hidden = false; simClosed = null;
   p.classList.remove("pop"); void p.offsetWidth; p.classList.add("pop");
   draw();
   p.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -1079,6 +1145,12 @@ $("themeSeg").addEventListener("click", ev => { const b = ev.target.closest("but
 $("wallPick").addEventListener("click", () => $("wallFile").click());
 $("wallFile").addEventListener("change", async () => { const f = $("wallFile").files[0]; $("wallFile").value = ""; if (f) await chooseWall(f); });
 $("wallClear").addEventListener("click", () => { pref.set("wall", null); applyWall(""); $("setErr").textContent = ""; });
+$("sOut").value = String(simNum("ship_out", 8)).replace(".", ","); $("sBack").value = String(simNum("ship_back", 8)).replace(".", ",");
+$("sSpeed").value = SPEED[pref.get("speed", "regular")] ? pref.get("speed", "regular") : "regular";
+$("sOut").addEventListener("input", () => { pref.set("ship_out", $("sOut").value); renderSim(); });
+$("sBack").addEventListener("input", () => { pref.set("ship_back", $("sBack").value); renderSim(); });
+$("sSpeed").addEventListener("change", () => { pref.set("speed", $("sSpeed").value); renderSim(); });
+$("simClose").addEventListener("click", () => { simClosed = chartSel; renderSim(); });
 $("frame").addEventListener("input", () => { applyFrame(Number($("frame").value)); pref.set("frame", $("frame").value); });
 ["cAccent", "cVal", "cText"].forEach(id => $(id).addEventListener("input", () => { pref.set(id, $(id).value); applyColors(); }));
 document.querySelectorAll("[data-reset]").forEach(b => b.addEventListener("click", () => { pref.set(b.dataset.reset, null); applyColors(); }));
