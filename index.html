@@ -390,8 +390,7 @@ function gridCard(c, q, gain) {
     b.addEventListener("click", () => removeItem(c));
     pic.append(b);
   }
-  d.append(pic, el("div", "gname", c.nom), el("div", "meta", [c.set, c.numero].filter(Boolean).join(" · ")),
-    el("div", "gprice money", fmt(c.prix_marche)));
+  d.append(pic, el("div", "gname", c.nom), el("div", "gprice money", fmt(c.prix_marche)));
   if (gain != null) d.append(el("div", "ggain money " + (gain >= 0 ? "up" : "down"), signed(gain) + (q > 1 ? " · pour " + q : "")));
   const cap = c.source === "manuel" ? "prix FR saisi" : c.source === "fr" ? "prix FR relevé" : "";
   if (cap) d.append(el("div", "meta", cap));
