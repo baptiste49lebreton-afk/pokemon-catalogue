@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow, noarchive, noimageindex">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https://assets.tcgdex.net; connect-src 'self' https://api.github.com https://api.tcgdex.net https://api.cardtrader.com; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https://assets.tcgdex.net; connect-src 'self' https://api.github.com https://api.tcgdex.net; base-uri 'none'; form-action 'none'">
 <title>Collection</title>
 <style>
 :root { --bg:#f4f3ef; --fg:#16181d; --muted:#6c717c; --line:#d9d7d0; --accent:#b88700; --up:#1f7a4d; --down:#b3261e; --field:#fff; --panel:#ebe9e2; color-scheme: light; }
@@ -91,7 +91,6 @@ tbody tr.clk:hover td { background:var(--panel); }
       <button type="button" id="btnAdd">+ Ajouter</button>
       <button type="button" class="ghost" id="btnChart">📈 Évolution</button>
       <button type="button" class="ghost" id="btnMic" hidden>🎤 Dicter</button>
-      <button type="button" class="ghost" id="btnFr" title="Relève les prix des cartes françaises sur CardTrader">🇫🇷 Prix FR</button>
     </div>
     <p class="status" id="status" role="status"></p>
   </header>
@@ -131,14 +130,6 @@ tbody tr.clk:hover td { background:var(--panel); }
       <button type="button" class="ghost" id="tokenClose">Fermer</button>
     </div>
     <p class="help" id="tokenState"></p>
-    <h2 style="margin-top:18px">Jeton CardTrader (bouton « Prix FR »)</h2>
-    <p class="help" style="margin-top:0">Colle ici ton jeton CardTrader (Paramètres → Accès API sur cardtrader.com). Il reste uniquement dans ce navigateur : les prix sont demandés à CardTrader depuis ton appareil, jamais depuis le dépôt.</p>
-    <div class="row" style="margin-top:10px">
-      <input type="password" id="ctIn" placeholder="Jeton CardTrader" style="flex:1; min-width:200px" autocomplete="off">
-      <button type="button" id="ctSave">Enregistrer</button>
-      <button type="button" class="ghost" id="ctClear">Effacer</button>
-    </div>
-    <p class="help" id="ctState"></p>
   </form>
 
   <section class="panel chartpanel" id="chartPanel" hidden>
@@ -266,7 +257,7 @@ function draw(updated) {
   const head = el("tr");
   [["", ""], ["Élément", ""], ["Payé", "r"], ["Marché", "r"], ["Écart", "r"],
    ["CCC 10 (est.)", "r"], ["CCC 9.5 (est.)", "r"], ["CCC 9 (est.)", "r"], ["", ""]]
-    .forEach(([t, c]) => { const th = el("th", c, t); if (t === "Marché") th.title = "Prix de base : Cardmarket, toutes langues (automatique chaque matin). Remplacé par le prix français relevé sur CardTrader (bouton « Prix FR ») ou par ton prix saisi (crayon ✎)."; head.append(th); });
+    .forEach(([t, c]) => { const th = el("th", c, t); if (t === "Marché") th.title = "Prix de base : Cardmarket, toutes langues (automatique chaque matin). Pour avoir le vrai prix en français : lien « offres en français » (Cardmarket), puis crayon ✎ pour saisir ton prix."; head.append(th); });
   const thead = el("thead"); thead.append(head);
   const tbody = el("tbody");
   table.append(thead, tbody);
@@ -285,7 +276,7 @@ function draw(updated) {
     const metaParts = [c.set, c.numero].filter(Boolean).join(" · ");
     if (c.id) {
       tr.classList.add("clk"); tr.title = "Clique pour suivre l'évolution du prix"; tr.tabIndex = 0;
-      tr.addEventListener("click", ev => { if (!ev.target.closest("button, input")) openChart(c.id); });
+      tr.addEventListener("click", ev => { if (!ev.target.closest("button, input, a")) openChart(c.id); });
       tr.addEventListener("keydown", ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === tr) { ev.preventDefault(); openChart(c.id); } });
     }
     if (c.id && c.id === chartSel && !$("chartPanel").hidden) tr.classList.add("sel");
@@ -299,7 +290,7 @@ function draw(updated) {
     const mk = el("td", "r");
     mk.append(el("div", "", fmt(c.prix_marche)));
     const cap = c.source === "manuel" ? "prix FR saisi"
-      : c.source === "fr" ? "FR · CardTrader" + (c.fr_n ? " · " + c.fr_n + " offre" + (c.fr_n > 1 ? "s" : "") : "")
+      : c.source === "fr" ? "prix FR relevé"
       : c.prix_marche != null && c.type !== "scelle" ? "auto · toutes langues" : "";
     if (cap) {
       const m = el("div", "meta", cap); m.style.whiteSpace = "nowrap";
@@ -309,6 +300,13 @@ function draw(updated) {
         m.append(" ", b);
       }
       mk.append(m);
+    }
+    if (c.type !== "scelle" && !c.pending && c.cm_id) {
+      const a = el("a", "meta", "offres en français ↗");
+      a.href = "https://www.cardmarket.com/fr/Pokemon/Products?idProduct=" + encodeURIComponent(c.cm_id) + "&language=2";
+      a.target = "_blank"; a.rel = "noopener noreferrer"; a.style.cssText = "display:block; white-space:nowrap; color:var(--muted); text-decoration:underline";
+      a.title = "Ouvre la page Cardmarket de cette carte, déjà filtrée sur les offres en français";
+      mk.append(a);
     }
     tr.append(imgCell, info,
       el("td", "r", fmt(c.prix_paye)), mk,
@@ -664,122 +662,9 @@ function editFr(c, mk) {
   });
 }
 
-// ---------- prix français relevés sur CardTrader (depuis ce navigateur) ----------
-const CT_API = "https://api.cardtrader.com/api/v2";
-const getCt = () => { try { return localStorage.getItem("ct") || ""; } catch (e) { return ""; } };
-const setCt = t => { try { t ? localStorage.setItem("ct", t) : localStorage.removeItem("ct"); } catch (e) {} };
-const lsJson = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } };
-const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
-
-async function ctGet(path, params) {
-  const url = new URL(CT_API + "/" + path);
-  for (const k in (params || {})) url.searchParams.set(k, params[k]);
-  for (let i = 0; i < 4; i++) {
-    const r = await fetch(url.toString(), { headers: { Authorization: "Bearer " + getCt() } });
-    if (r.status === 429) { await sleep(1500 * (i + 1)); continue; }
-    if (r.status === 401 || r.status === 403) throw new Error("ct-token");
-    if (!r.ok) throw new Error("ct-http");
-    return r.json();
-  }
-  throw new Error("ct-http");
-}
-
-// relie les identifiants produit Cardmarket (donnés par TCGdex) aux fiches CardTrader ; résultat gardé dans ce navigateur
-async function ctBlueprints(wanted, progress) {
-  const map = lsJson("ctmap", {}), miss = lsJson("ctmiss", {}), now = Date.now();
-  const todo = new Set([...wanted].filter(id => !map[id] && !(miss[id] && now - miss[id] < 7 * 864e5)));
-  if (todo.size) {
-    const games = await ctGet("games");
-    const game = games.find(g => /pok[eé]mon/i.test((g.name || "") + " " + (g.display_name || "")));
-    if (!game) throw new Error("ct-http");
-    const exps = (await ctGet("expansions")).filter(e => e.game_id === game.id).sort((a, b) => b.id - a.id);
-    for (let i = 0; i < exps.length && todo.size; i++) {
-      progress("Recherche de tes cartes chez CardTrader… " + Math.round(100 * i / exps.length) + " % (une seule fois)");
-      let bps = [];
-      try { bps = await ctGet("blueprints/export", { expansion_id: exps[i].id }); }
-      catch (e) { if (e.message === "ct-token") throw e; }
-      for (const bp of bps) for (const id of (bp.card_market_ids || [])) if (todo.has(id)) { map[id] = bp.id; todo.delete(id); }
-      await sleep(150);
-    }
-    todo.forEach(id => { miss[id] = now; });
-    lsSet("ctmap", map); lsSet("ctmiss", miss);
-  }
-  return map;
-}
-
-// médiane des (jusqu'à) 5 offres les moins chères en français, bon état, en euros
-function frPrice(list) {
-  const BONS = ["mint", "near mint", "slightly played"];
-  const props = o => o.properties_hash || {};
-  let ok = (list || []).filter(o => {
-    const langs = Object.keys(props(o)).filter(k => k.includes("language")).map(k => String(props(o)[k]).toLowerCase());
-    return (!langs.length || langs.some(l => ["fr", "french", "français"].includes(l)))
-      && !o.graded && !o.on_vacation && (o.bundle_size || 1) === 1
-      && o.price && o.price.currency === "EUR" && o.price.cents > 0;
-  });
-  const rev = o => Object.keys(props(o)).some(k => k.includes("reverse") && props(o)[k]);
-  if (ok.some(o => !rev(o))) ok = ok.filter(o => !rev(o));
-  const bons = ok.filter(o => BONS.includes(String(props(o).condition || "").toLowerCase()));
-  if (bons.length) ok = bons;
-  const prix = ok.map(o => o.price.cents / 100).sort((a, b) => a - b);
-  if (!prix.length) return null;
-  const top = prix.slice(0, 5), m = top.length >> 1;
-  const med = top.length % 2 ? top[m] : (top[m - 1] + top[m]) / 2;
-  return { prix: Math.round(med * 100) / 100, n: top.length, min: prix[0] };
-}
-
-let frBusy = false;
-async function refreshFr() {
-  if (frBusy || state.busy) { setStatus("Une opération est déjà en cours, patiente un instant."); return; }
-  if (!getCt()) {
-    openToken(); $("ctState").textContent = "Colle d'abord ton jeton CardTrader ici, puis reclique sur « Prix FR ».";
-    $("ctIn").focus(); return;
-  }
-  const cards = state.cards.filter(c => c.type !== "scelle" && c.id && !c.pending && c.uid);
-  if (!cards.length) { setStatus("Aucune carte à actualiser."); return; }
-  frBusy = true; $("btnFr").disabled = true;
-  try {
-    setStatus("Recherche des prix français sur CardTrader…");
-    const cmIds = {};
-    for (const c of cards) {
-      try {
-        const r = await fetch("https://api.tcgdex.net/v2/fr/cards/" + encodeURIComponent(c.id));
-        if (r.ok) { const d = await r.json(); const id = d && d.pricing && d.pricing.cardmarket && d.pricing.cardmarket.idProduct; if (id) cmIds[c.uid] = id; }
-      } catch (e) {}
-    }
-    const map = await ctBlueprints(new Set(Object.values(cmIds)), setStatus);
-    const prices = {}; let sans = 0;
-    let i = 0;
-    for (const c of cards) {
-      i++;
-      if (c.prix_fr != null) continue;               // un prix saisi à la main reste prioritaire
-      const bp = map[cmIds[c.uid]];
-      if (!bp) { sans++; continue; }
-      setStatus("Prix français sur CardTrader… " + i + " / " + cards.length);
-      const lang = await ctGet("marketplace/products", { blueprint_id: bp, language: "fr" });
-      let res = frPrice(lang[String(bp)]);
-      if (!res) { await sleep(400); const all = await ctGet("marketplace/products", { blueprint_id: bp }); res = frPrice(all[String(bp)]); }
-      if (res) prices[c.uid] = res; else sans++;
-      await sleep(400);
-    }
-    const uids = Object.keys(prices);
-    if (!uids.length) { setStatus("Aucune offre française trouvée pour le moment : les prix automatiques restent inchangés."); return; }
-    frBusy = false;
-    const first = uids[0];
-    await change({ action: "set_fr_auto", prices },
-      cs => cs.map(x => prices[x.uid] ? Object.assign({}, x, { prix_marche: prices[x.uid].prix, source: "fr", fr_n: prices[x.uid].n }) : x),
-      v => v.watchlist.some(e => e.uid === first && e.fr_auto && e.fr_auto.prix === prices[first].prix));
-    if (sans) setStatus($("status").textContent + " (" + sans + " carte(s) sans offre française : prix automatique conservé.)");
-  } catch (e) {
-    if (e.message === "ct-token") { openToken(); $("ctState").textContent = "CardTrader a refusé ce jeton : vérifie qu'il est bien copié en entier."; setStatus("CardTrader a refusé le jeton."); }
-    else setStatus("Impossible de joindre CardTrader pour le moment. Réessaie dans un instant.");
-  } finally { frBusy = false; $("btnFr").disabled = false; }
-}
-
 function openToken() {
   $("tokenPanel").hidden = false;
   $("tokenState").textContent = getToken() ? "Un jeton est enregistré dans ce navigateur." : "Aucun jeton enregistré.";
-  $("ctState").textContent = getCt() ? "Un jeton CardTrader est enregistré dans ce navigateur." : "Aucun jeton CardTrader enregistré.";
   $("tokenIn").focus();
 }
 
@@ -829,13 +714,6 @@ $("tokenPanel").addEventListener("submit", ev => {
 });
 if (SR) { $("btnMic").hidden = false; $("fMic").hidden = false; $("micNote").hidden = false; }
 $("btnMic").addEventListener("click", dictate);
-$("btnFr").addEventListener("click", refreshFr);
-$("ctSave").addEventListener("click", () => {
-  const t = $("ctIn").value.trim();
-  if (t) { setCt(t); $("ctIn").value = ""; $("ctState").textContent = "Jeton CardTrader enregistré dans ce navigateur. Clique maintenant sur « Prix FR »."; }
-});
-$("ctIn").addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); $("ctSave").click(); } });
-$("ctClear").addEventListener("click", () => { setCt(""); try { localStorage.removeItem("ctmap"); localStorage.removeItem("ctmiss"); } catch (e) {} $("ctState").textContent = "Jeton CardTrader effacé de ce navigateur."; });
 $("fMic").addEventListener("click", dictate);
 try {
   const saved = sessionStorage.getItem("k");
