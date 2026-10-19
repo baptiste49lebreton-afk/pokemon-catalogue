@@ -21,9 +21,11 @@ h1 { font:800 2rem/1.1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 .value { font:600 1.5rem/1.2 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-variant-numeric:tabular-nums; }
 .wrap { overflow-x:auto; min-width:0; }
 table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
-th, td { padding:10px 12px; border-bottom:1px solid var(--line); text-align:left; vertical-align:middle; }
+th, td { padding:10px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:middle; }
 th { color:var(--muted); font-size:.75rem; text-transform:uppercase; letter-spacing:.05em; font-weight:500; white-space:nowrap; }
 .r { text-align:right; }
+td.r { white-space:nowrap; }
+td:nth-child(2) { min-width:150px; }
 td.img img { width:56px; height:auto; border-radius:4px; display:block; }
 .name { font-weight:600; }
 #zoom { position:fixed; z-index:50; width:270px; height:auto; border-radius:12px; box-shadow:0 12px 34px rgba(0,0,0,.5); pointer-events:none; display:none; background:var(--panel); }
@@ -388,7 +390,7 @@ const cccFee = p => p == null ? null : p <= 50 ? { fee: 20, tier: "1 à 50 €" 
 function feeTd(c, q) {
   const td = el("td", "r"), f = c.type === "scelle" ? null : cccFee(c.prix_marche);
   if (!f) { td.append(el("div", "", "—")); return td; }
-  td.append(el("div", "money", fmt(f.fee)), el("div", "meta", "tranche " + f.tier));
+  td.append(el("div", "money", fmt(f.fee)), el("div", "meta", "tranche " + f.tier.replace("plus de ", "> ")));
   if (q > 1) td.append(el("div", "meta money", "pour " + q + " : " + fmt(f.fee * q)));
   td.title = "Frais de gradation CCC (Regular) pour une carte valant " + fmt(c.prix_marche) + ".";
   return td;
