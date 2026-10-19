@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow, noarchive, noimageindex">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https://assets.tcgdex.net; connect-src 'self' https://api.github.com; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https://assets.tcgdex.net; connect-src 'self' https://api.github.com https://api.tcgdex.net; base-uri 'none'; form-action 'none'">
 <title>Collection</title>
 <style>
 :root { --bg:#f4f3ef; --fg:#16181d; --muted:#6c717c; --line:#d9d7d0; --accent:#b88700; --up:#1f7a4d; --down:#b3261e; --field:#fff; --panel:#ebe9e2; color-scheme: light; }
@@ -45,6 +45,9 @@ button:disabled { opacity:.6; cursor:wait; }
 .grid label { display:flex; flex-direction:column; gap:4px; font-size:.8rem; color:var(--muted); }
 .row { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
 .help { color:var(--muted); font-size:.85rem; margin:8px 0 0; }
+.res { display:flex; flex-direction:column; gap:6px; margin-top:12px; max-height:340px; overflow-y:auto; }
+.res button { display:flex; gap:12px; align-items:center; text-align:left; font-weight:500; }
+.res img { width:44px; height:auto; border-radius:4px; flex:none; }
 .chartpanel select { max-width:100%; }
 .chartwrap { display:flex; gap:16px; align-items:flex-start; }
 .chartwrap img { width:72px; height:auto; border-radius:6px; flex:none; }
@@ -91,14 +94,16 @@ td.nm { cursor:pointer; }
       <label>CCC 9.5 (€) <input id="fC95" inputmode="decimal"></label>
       <label>CCC 9 (€) <input id="fC9" inputmode="decimal"></label>
     </div>
-    <p class="help">Nom, extension et numéro suffisent. Le prix du marché est cherché tout seul, chaque jour.</p>
+    <p class="help">Écris ou dis le nom, puis touche « Chercher la carte » : tu choisis ta carte dans la liste et l'extension et le numéro se remplissent tout seuls. Le prix du marché est ensuite mis à jour chaque matin.</p>
     <div class="row">
+      <button type="button" id="fSearch">🔍 Chercher la carte</button>
       <button type="submit" id="fGo">Enregistrer</button>
       <button type="button" class="ghost" id="fMic" hidden>🎤 Dicter</button>
       <button type="button" class="ghost" id="fCancel">Annuler</button>
     </div>
     <p class="help" id="heard" role="status"></p>
-    <p class="help" id="micNote" hidden>Dictée : dis par exemple « Ajoute Dracaufeu ex, extension 151, numéro 199, payé 5,99 euros ». Ton navigateur envoie la voix à son service de reconnaissance (Google pour Chrome). Rien n'est enregistré sans ton clic sur « Enregistrer ».</p>
+    <div class="res" id="results"></div>
+    <p class="help" id="micNote" hidden>Dictée : dis par exemple « Dracaufeu ex » (la recherche se lance toute seule), ou « Ajoute Dracaufeu ex, extension 151, numéro 199, payé 5,99 euros ». Ton navigateur envoie la voix à son service de reconnaissance (Google pour Chrome). La recherche de carte interroge le site public TCGdex. Rien n'est enregistré sans ton clic sur « Enregistrer ».</p>
     <p class="err" id="fErr" role="alert"></p>
   </form>
 
@@ -431,6 +436,7 @@ function applyDictation(text) {
   if (r.set) $("fSet").value = capFirst(r.set);
   if (r.numero) $("fNum").value = r.numero;
   if (r.paye != null) $("fPaye").value = String(r.paye).replace(".", ",");
+  if (r.nom && !r.set && !r.numero) searchCard();
 }
 function dictate() {
   if (!SR) return;
@@ -450,6 +456,49 @@ function dictate() {
     $("fMic").textContent = "⏹ J'écoute…"; $("btnMic").textContent = "⏹ J'écoute…";
     $("heard").textContent = "";
   } catch (e) { rec = null; }
+}
+
+// ---------- recherche de carte (TCGdex, gratuit, sans clé) ----------
+const TCG = "https://api.tcgdex.net/v2/fr";
+let setsMap = null, picked = null;
+async function loadSets() {
+  if (setsMap) return setsMap;
+  const r = await fetch(TCG + "/sets");
+  if (!r.ok) throw new Error("tcgdex");
+  const list = await r.json();
+  const m = {}; list.forEach((x, i) => { m[x.id] = { name: x.name, rank: i }; });
+  setsMap = m; return m;
+}
+async function searchCard() {
+  const q = $("fNom").value.trim(), box = $("results"), msg = $("heard");
+  box.replaceChildren(); picked = null;
+  if (q.length < 2) { msg.textContent = "Écris ou dis d'abord le nom de la carte."; return; }
+  msg.textContent = "Recherche…";
+  try {
+    const [sets, r] = await Promise.all([loadSets(), fetch(TCG + "/cards?name=" + encodeURIComponent(q))]);
+    if (!r.ok) throw new Error("tcgdex");
+    const found = (await r.json()).map(c => {
+      const sid = String(c.id).slice(0, String(c.id).length - String(c.localId).length - 1);
+      return { c, sid, s: sets[sid] };
+    }).sort((a, b) => (b.s ? b.s.rank : -1) - (a.s ? a.s.rank : -1)).slice(0, 30);
+    if (!found.length) { msg.textContent = "Aucune carte trouvée pour « " + q + " ». Remplis l'extension et le numéro à la main."; return; }
+    msg.textContent = found.length + " résultat" + (found.length > 1 ? "s" : "") + " : touche ta carte (les plus récentes en premier).";
+    found.forEach(({ c, sid, s }) => {
+      const b = el("button", "ghost"); b.type = "button";
+      if (c.image && String(c.image).startsWith("https://assets.tcgdex.net/")) {
+        const im = el("img"); im.src = c.image + "/low.webp"; im.alt = ""; im.referrerPolicy = "no-referrer"; b.append(im);
+      }
+      b.append(el("span", "", c.name + " · " + (s ? s.name : sid) + " · n° " + c.localId));
+      b.addEventListener("click", () => {
+        $("fNom").value = c.name; $("fSet").value = s ? s.name : sid; $("fNum").value = c.localId;
+        picked = { sid, set: $("fSet").value, numero: $("fNum").value };
+        box.replaceChildren();
+        msg.textContent = "Carte choisie : " + c.name + " (" + $("fSet").value + ", n° " + c.localId + "). Indique le prix payé si tu veux, puis « Enregistrer ».";
+        $("fPaye").focus();
+      });
+      box.append(b);
+    });
+  } catch (e) { msg.textContent = "Recherche impossible pour le moment. Remplis l'extension et le numéro à la main."; }
 }
 
 // ---------- actions ----------
@@ -476,7 +525,8 @@ async function addItem(ev) {
     if (v != null) ccc[k] = v;
   }
   const uid = newUid();
-  const entry = { type: "carte", uid, nom, set_api: set, set_affiche: set, numero, ccc };
+  const exact = picked && picked.set === set && picked.numero === numero;
+  const entry = { type: "carte", uid, nom, set_api: exact ? picked.sid : set, set_affiche: set, numero, ccc };
   if (paye != null) entry.prix_paye = paye;
   const placeholder = { uid, type: "carte", nom, set, numero, prix_paye: paye == null ? 5.99 : paye, prix_marche: null,
                         ccc10: ccc["10"] ?? null, ccc95: ccc["9.5"] ?? null, ccc9: ccc["9"] ?? null, pending: true };
@@ -484,7 +534,7 @@ async function addItem(ev) {
   const ok = await change({ action: "add", entry }, cards => cards.concat([placeholder]),
     v => v.watchlist.some(e => e.uid === uid));
   $("fGo").disabled = false;
-  if (ok) { $("addPanel").reset(); $("addPanel").hidden = true; }
+  if (ok) { $("addPanel").reset(); $("addPanel").hidden = true; $("results").replaceChildren(); $("heard").textContent = ""; picked = null; }
 }
 
 async function removeItem(c) {
@@ -534,6 +584,9 @@ $("login").addEventListener("submit", async ev => {
 $("btnAdd").addEventListener("click", () => { $("addPanel").hidden = !$("addPanel").hidden; if (!$("addPanel").hidden) $("fNom").focus(); });
 $("fCancel").addEventListener("click", () => { $("addPanel").hidden = true; });
 $("addPanel").addEventListener("submit", addItem);
+$("fSearch").addEventListener("click", searchCard);
+$("fNom").addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); searchCard(); } });
+["fSet", "fNum"].forEach(id => $(id).addEventListener("input", () => { picked = null; }));
 $("btnRefresh").addEventListener("click", refresh);
 $("chartSel").addEventListener("change", () => { chartSel = $("chartSel").value; draw(); });
 $("btnToken").addEventListener("click", openToken);
