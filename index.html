@@ -49,20 +49,22 @@ button:disabled { opacity:.6; cursor:wait; }
 .res { display:flex; flex-direction:column; gap:6px; margin-top:8px; max-height:340px; overflow-y:auto; }
 .res button { display:flex; gap:12px; align-items:center; text-align:left; font-weight:500; }
 .res img { width:44px; height:auto; border-radius:4px; flex:none; }
-.chartpanel select { max-width:100%; }
-.chartwrap { display:flex; gap:16px; align-items:flex-start; }
-.chartwrap img { width:72px; height:auto; border-radius:6px; flex:none; }
-.plot { position:relative; flex:1; min-width:0; }
+.chartpanel { padding:12px 14px; }
+.chartpanel select { max-width:100%; padding:4px 8px; }
+.chartwrap { display:flex; gap:12px; align-items:flex-start; }
+.chartwrap img { width:44px; height:auto; border-radius:6px; flex:none; }
+.plot { position:relative; flex:1; min-width:0; max-width:420px; }
 .plot svg { width:100%; height:auto; display:block; touch-action:pan-y; }
 .tip { position:absolute; pointer-events:none; background:var(--field); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:4px 8px; font-size:.85rem; white-space:nowrap; transform:translate(-50%,-125%); }
-.sum { margin:10px 0 0; font-size:.9rem; }
+.sum { margin:6px 0 0; font-size:.8rem; color:var(--muted); }
 details.tv { margin-top:8px; font-size:.85rem; color:var(--muted); }
 details.tv table { margin-top:6px; max-width:320px; }
 tbody tr.sel td { background:var(--panel); }
 tbody tr.clk { cursor:pointer; }
 tbody tr.clk:hover td { background:var(--panel); }
 .charthead { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px; }
-.charthead h2 { margin:0; }
+.charthead h2 { margin:0 auto 0 0; }
+.chartpanel button { padding:6px 12px; }
 .pop { animation:pop .35s ease-out; }
 @keyframes pop { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:none; } }
 .draw polyline { stroke-dasharray:1; stroke-dashoffset:1; animation:drawline 1.2s ease-out .15s forwards; }
@@ -89,8 +91,6 @@ tbody tr.clk:hover td { background:var(--panel); }
       <button type="button" id="btnAdd">+ Ajouter</button>
       <button type="button" class="ghost" id="btnChart">📈 Évolution</button>
       <button type="button" class="ghost" id="btnMic" hidden>🎤 Dicter</button>
-      <button type="button" class="ghost" id="btnRefresh">Actualiser</button>
-      <button type="button" class="ghost" id="btnToken">Accès</button>
     </div>
     <p class="status" id="status" role="status"></p>
   </header>
@@ -132,9 +132,8 @@ tbody tr.clk:hover td { background:var(--panel); }
   </form>
 
   <section class="panel chartpanel" id="chartPanel" hidden>
-    <div class="charthead"><h2>Évolution des prix</h2><button type="button" class="ghost" id="chartClose">Masquer</button></div>
-    <label class="meta">Afficher : <select id="chartSel"></select></label>
-    <div class="chartwrap" style="margin-top:12px">
+    <div class="charthead"><h2>Évolution des prix</h2><select id="chartSel"></select><button type="button" class="ghost" id="chartClose">Masquer</button></div>
+    <div class="chartwrap">
       <img id="chartImg" alt="" hidden>
       <div class="plot" id="plot"></div>
     </div>
@@ -218,8 +217,8 @@ async function waitFor(check) {
 
 function setStatus(t) { $("status").textContent = t || ""; }
 function explain(e) {
-  return e.message === "token" ? "Accès refusé : le jeton est absent, expiré ou n'a pas les bons droits (voir « Accès »)."
-    : e.message === "notoken" ? "Ajoute d'abord ton jeton d'accès (bouton « Accès »)."
+  return e.message === "token" ? "Accès refusé : la clé d'accès est absente, expirée ou n'a pas les bons droits. Colles-en une nouvelle ci-dessous."
+    : e.message === "notoken" ? "Colle d'abord ta clé d'accès ci-dessous."
     : "L'envoi a échoué. Réessaie dans un instant.";
 }
 
@@ -229,13 +228,13 @@ async function change(msg, optimistic, check) {
   try {
     await send(msg);
   } catch (e) {
-    setStatus(explain(e)); state.busy = false; return false;
+    setStatus(explain(e)); if (e.message === "token") openToken(); state.busy = false; return false;
   }
   state.cards = optimistic(state.cards); draw();
   setStatus("Envoyé. Enregistrement en cours, compte 1 minute environ…");
   const v = await waitFor(check);
   if (v) { state.vault = v; state.cards = v.cards.cards; draw(v.cards.updated); setStatus("Enregistré."); }
-  else setStatus("Pas encore confirmé. Clique sur « Actualiser » dans une minute ou deux.");
+  else setStatus("Pas encore confirmé : recharge la page dans une minute ou deux.");
   state.busy = false;
   return true;
 }
@@ -356,7 +355,7 @@ function renderChart() {
   if (!cards.length) { plot.replaceChildren(); sum.textContent = "Ajoute une carte pour voir son évolution."; return; }
   if (!pts.length) { plot.replaceChildren(); sum.textContent = "Pas encore de prix enregistré : le premier relevé arrive à la prochaine mise à jour du matin."; return; }
 
-  const W = 480, H = 240, L = 54, R = 14, T = 14, B = 28;
+  const W = 420, H = 150, L = 50, R = 10, T = 10, B = 24;
   let lo = Math.min(...pts.map(p => p.v)), hi = Math.max(...pts.map(p => p.v));
   if (hi - lo < 0.01) { lo -= 1; hi += 1; } else { const pad = (hi - lo) * 0.1; lo -= pad; hi += pad; }
   lo = Math.max(0, lo);
@@ -368,20 +367,20 @@ function renderChart() {
 
   const svg = sv("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
     "aria-label": "Courbe des prix, " + pts.length + " relevé" + (pts.length > 1 ? "s" : "") });
-  for (let i = 0; i < 4; i++) {
-    const v = lo + (hi - lo) * i / 3, y = Y(v);
+  for (let i = 0; i < 3; i++) {
+    const v = lo + (hi - lo) * i / 2, y = Y(v);
     svg.append(sv("line", { x1: L, x2: W - R, y1: y, y2: y, stroke: "var(--line)", "stroke-width": 1 }));
-    const lab = sv("text", { x: L - 8, y: y + 4, "text-anchor": "end", fill: "var(--muted)", "font-size": 12 });
+    const lab = sv("text", { x: L - 8, y: y + 4, "text-anchor": "end", fill: "var(--muted)", "font-size": 11 });
     lab.textContent = money0(v); svg.append(lab);
   }
-  const xl = (p, anchor) => { const e = sv("text", { x: X(p), y: H - 8, "text-anchor": anchor, fill: "var(--muted)", "font-size": 12 }); e.textContent = shortDate(p.d); svg.append(e); };
+  const xl = (p, anchor) => { const e = sv("text", { x: X(p), y: H - 8, "text-anchor": anchor, fill: "var(--muted)", "font-size": 11 }); e.textContent = shortDate(p.d); svg.append(e); };
   if (pts.length === 1) xl(pts[0], "middle");
   else { xl(pts[0], "start"); xl(pts[pts.length - 1], "end"); }
   if (pts.length > 1)
     svg.append(sv("polyline", { pathLength: 1, points: pts.map(p => X(p).toFixed(1) + "," + Y(p.v).toFixed(1)).join(" "),
       fill: "none", stroke: "var(--accent)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
   (pts.length <= 40 ? pts : [pts[pts.length - 1]]).forEach(p =>
-    svg.append(sv("circle", { cx: X(p), cy: Y(p.v), r: 4, fill: "var(--accent)", stroke: "var(--bg)", "stroke-width": 2 })));
+    svg.append(sv("circle", { cx: X(p), cy: Y(p.v), r: 3, fill: "var(--accent)", stroke: "var(--bg)", "stroke-width": 2 })));
 
   const cross = sv("line", { y1: T, y2: H - B, stroke: "var(--muted)", "stroke-width": 1, visibility: "hidden" });
   const dot = sv("circle", { r: 6, fill: "var(--accent)", stroke: "var(--bg)", "stroke-width": 2, visibility: "hidden" });
@@ -617,14 +616,6 @@ function openToken() {
   $("tokenIn").focus();
 }
 
-async function refresh() {
-  setStatus("Actualisation…");
-  try {
-    const v = await loadVault();
-    state.vault = v; state.cards = v.cards.cards; draw(v.cards.updated); setStatus("À jour.");
-  } catch (e) { setStatus("Impossible d'actualiser pour le moment."); }
-}
-
 // ---------- démarrage ----------
 async function unlock(password) {
   state.password = password;
@@ -659,11 +650,9 @@ $("fNom").addEventListener("input", () => {
   clearTimeout(typingTimer); typingTimer = setTimeout(() => { if (!$("fSet").value.trim()) searchCard(false); }, 450);
 });
 ["fSet", "fNum"].forEach(id => $(id).addEventListener("input", () => { picked = null; }));
-$("btnRefresh").addEventListener("click", refresh);
 $("chartSel").addEventListener("change", () => { openChart($("chartSel").value, true); });
 $("btnChart").addEventListener("click", () => { if ($("chartPanel").hidden) openChart(chartSel, true); else closeChart(); });
 $("chartClose").addEventListener("click", closeChart);
-$("btnToken").addEventListener("click", openToken);
 $("tokenClose").addEventListener("click", () => { $("tokenPanel").hidden = true; });
 $("tokenClear").addEventListener("click", () => { setToken(""); $("tokenState").textContent = "Jeton effacé de ce navigateur."; });
 $("tokenPanel").addEventListener("submit", ev => {
