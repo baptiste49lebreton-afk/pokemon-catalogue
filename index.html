@@ -383,13 +383,24 @@ function openOnClick(node, c) {
 }
 const CCC_COEF = { "10": 1.8, "9.5": 1.4, "9": 1.15 };      // même estimation que le script du matin
 const cccEst = (k, price) => price == null ? null : Math.round(price * CCC_COEF[k] * 100) / 100;
+// Tarif de gradation CCC (formule Regular), selon la valeur de la carte. Relevé sur cccgrading.com/en/prices le 20/10/2026.
+const cccFee = p => p == null ? null : p <= 50 ? { fee: 20, tier: "1 à 50 €" } : p <= 100 ? { fee: 23, tier: "51 à 100 €" } : p <= 500 ? { fee: 27, tier: "101 à 500 €" } : { fee: 31, tier: "plus de 500 €" };
+function feeTd(c, q) {
+  const td = el("td", "r"), f = c.type === "scelle" ? null : cccFee(c.prix_marche);
+  if (!f) { td.append(el("div", "", "—")); return td; }
+  td.append(el("div", "money", fmt(f.fee)), el("div", "meta", "tranche " + f.tier));
+  if (q > 1) td.append(el("div", "meta money", "pour " + q + " : " + fmt(f.fee * q)));
+  td.title = "Frais de gradation CCC (Regular) pour une carte valant " + fmt(c.prix_marche) + ".";
+  return td;
+}
 const isAuto = (c, k) => (c.ccc_auto || []).includes(k);
 function cccTd(c, k, val) {
   const auto = val != null && isAuto(c, k), td = moneyTd(auto ? "≈ " + fmt(val) : fmt(val));
   if (auto) td.firstChild.style.color = "var(--muted)";
   if (val != null && c.prix_marche != null) {
     const d = val - c.prix_marche, e = el("div", "meta money " + (d >= 0 ? "up" : "down"), signed(d));
-    e.title = "Écart avec le prix actuel de la carte (" + fmt(c.prix_marche) + ")";
+    const f = cccFee(c.prix_marche);
+    e.title = "Écart avec le prix actuel de la carte (" + fmt(c.prix_marche) + ")" + (f ? ". Après frais de gradation CCC (" + fmt(f.fee) + ") : " + signed(d - f.fee) : "");
     td.append(e);
   }
   return td;
@@ -423,8 +434,9 @@ function draw(updated) {
   const table = el("table");
   const head = el("tr");
   [["", ""], ["Élément", ""], ["Payé", "r"], ["Prix actuel", "r"], ["Écart", "r"],
-   ["CCC 10 (est.)", "r"], ["CCC 9.5 (est.)", "r"], ["CCC 9 (est.)", "r"], ["", ""]]
-    .forEach(([t, c]) => { const th = el("th", c, t); if (t === "Prix actuel") th.title = "Prix Cardmarket mis à jour automatiquement chaque matin. Tu peux le remplacer avec le crayon ✎ : il ne bouge alors plus tout seul. Les prix CCC sont des estimations, sauf ceux que tu saisis."; head.append(th); });
+   ["CCC 10 (est.)", "r"], ["CCC 9.5 (est.)", "r"], ["CCC 9 (est.)", "r"], ["Frais CCC", "r"], ["", ""]]
+    .forEach(([t, c]) => { const th = el("th", c, t); if (t === "Frais CCC") th.title = "Simulation des frais de gradation CCC (formule Regular), selon le prix actuel de la carte : 1 à 50 € = 20 € ; 51 à 100 € = 23 € ; 101 à 500 € = 27 € ; plus de 500 € = 31 €. En option : Express +5 €, Super-Express +20 €, assurance 2 % de la valeur. Tarif relevé sur cccgrading.com le 20/10/2026 : vérifie-le avant d'envoyer tes cartes.";
+      if (t === "Prix actuel") th.title = "Prix Cardmarket mis à jour automatiquement chaque matin. Tu peux le remplacer avec le crayon ✎ : il ne bouge alors plus tout seul. Les prix CCC sont des estimations, sauf ceux que tu saisis."; head.append(th); });
   const thead = el("thead"); thead.append(head);
   const tbody = el("tbody");
   table.append(thead, tbody);
@@ -477,7 +489,7 @@ function draw(updated) {
     const g = el("td", "r " + (gain == null ? "" : gain >= 0 ? "up" : "down")); g.append(el("div", "money", signed(gain)));
     if (q > 1 && gain != null) g.append(el("div", "meta", "pour " + q));
     tr.append(imgCell, info, moneyTd(fmt(c.prix_paye)), mk, g,
-      cccTd(c, "10", c.ccc10), cccTd(c, "9.5", c.ccc95), cccTd(c, "9", c.ccc9), del);
+      cccTd(c, "10", c.ccc10), cccTd(c, "9.5", c.ccc95), cccTd(c, "9", c.ccc9), feeTd(c, q), del);
     tbody.append(tr);
   });
 
