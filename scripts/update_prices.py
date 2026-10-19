@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 """
-Met à jour le coffre chiffré data/vault.json (cartes, images, prix du jour, historique).
+Met à jour le coffre chiffré data/vault.json (cartes, produits scellés, prix du jour, historique).
 
 - Les données ne sont JAMAIS écrites en clair dans le dépôt : tout est chiffré
   (AES-256-GCM, clé dérivée du mot de passe par PBKDF2) avec le secret GitHub SITE_PASSWORD.
-- Source des prix : API publique TCGdex (https://tcgdex.dev), gratuite et sans clé.
+- Source des prix des cartes : API publique TCGdex (https://tcgdex.dev), gratuite et sans clé.
   Prix Cardmarket en euros uniquement (pas de prix en dollars).
+- Produits scellés : prix de marché saisi à la main (champ prix_marche_manuel).
 - Les prix CCC viennent de la watchlist (estimations saisies à la main).
 
+Le site peut envoyer un message chiffré (variable PAYLOAD) pour ajouter ou supprimer
+un élément : {"action": "add", "entry": {...}} ou {"action": "delete", "uid": "..."}.
+Un message qui ne se déchiffre pas avec le mot de passe est ignoré.
+
 Première exécution : si le coffre n'existe pas, il est créé à partir des anciens
-fichiers en clair (data/watchlist.json, data/history.json), qui sont ensuite supprimés
-par le workflow.
+fichiers en clair (data/watchlist.json, data/history.json).
 """
 import base64
+import hashlib
 import json
 import os
 import sys
@@ -29,7 +34,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 VAULT = DATA / "vault.json"
-API = "https://api.tcgdex.net/v2/en"
+API = "https://api.tcgdex.net/v2"
 PRIX_BOOSTER = 5.99
 ITERATIONS = 600_000
 
@@ -49,8 +54,10 @@ def encrypt(obj, password):
 
 
 def decrypt(blob, password):
+    if not (100_000 <= int(blob["iter"]) <= 2_000_000):
+        raise ValueError("itérations hors limites")
     salt, iv, ct = (base64.b64decode(blob[k]) for k in ("salt", "iv", "data"))
-    plain = AESGCM(_derive(password, salt, blob["iter"])).decrypt(iv, ct, None)
+    plain = AESGCM(_derive(password, salt, int(blob["iter"]))).decrypt(iv, ct, None)
     return json.loads(plain.decode("utf-8"))
 
 
@@ -59,8 +66,8 @@ class ApiError(Exception):
     pass
 
 
-def api_get(path, params=None):
-    url = f"{API}/{path}"
+def api_get(path, params=None, lang="en"):
+    url = f"{API}/{lang}/{path}"
     if params:
         url += "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={
@@ -75,12 +82,26 @@ def api_get(path, params=None):
 
 
 def find_set_id(set_name):
-    results = api_get("sets", {"name": set_name}) or []
+    """Cherche l'extension par son nom (anglais ou français), sinon comme identifiant."""
     wanted = set_name.strip().lower()
-    for s in results:
-        if (s.get("name") or "").strip().lower() == wanted:
-            return s["id"]
-    return results[0]["id"] if results else None
+    failures = 0
+    for lang in ("en", "fr"):
+        try:
+            results = api_get("sets", {"name": set_name}, lang=lang) or []
+        except ApiError:
+            failures += 1
+            continue
+        for s in results:
+            if (s.get("name") or "").strip().lower() == wanted:
+                return s["id"]
+        if results:
+            return results[0]["id"]
+    if failures == 2:  # l'API ne répond pas du tout : ce n'est pas « extension introuvable »
+        raise ApiError("API TCGdex injoignable")
+    try:
+        return (api_get(f"sets/{set_name.strip()}") or {}).get("id")
+    except ApiError:
+        return None
 
 
 def find_card(entry):
@@ -88,7 +109,14 @@ def find_card(entry):
     if not set_id:
         print(f"  extension introuvable : {entry['set_api']}")
         return None
-    return api_get(f"sets/{set_id}/{entry['numero']}")
+    numero = str(entry["numero"]).strip()
+    last_error = None
+    for candidate in dict.fromkeys([numero, numero.zfill(3)]):
+        try:
+            return api_get(f"sets/{set_id}/{candidate}")
+        except ApiError as exc:
+            last_error = exc
+    raise last_error
 
 
 def best_price(card):
@@ -98,6 +126,91 @@ def best_price(card):
         if cm.get(key):
             return cm[key]
     return None
+
+
+# ---------- éléments du suivi ----------
+def entry_key(e):
+    if e.get("type") == "scelle":
+        return ("scelle", (e.get("nom") or "").strip().lower())
+    return ((e.get("set_api") or "").strip().lower(), str(e.get("numero", "")).strip())
+
+
+def ensure_uid(e):
+    if not e.get("uid"):
+        e["uid"] = hashlib.sha1("|".join(entry_key(e)).encode("utf-8")).hexdigest()[:10]
+    return e
+
+
+def _num(v, default=None):
+    try:
+        f = float(str(v).replace(",", "."))
+        return f if f >= 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def clean_entry(raw):
+    """Valide et nettoie un élément reçu du site. Retourne None s'il est inutilisable."""
+    if not isinstance(raw, dict):
+        return None
+    text = lambda k, n=120: str(raw.get(k) or "").strip()[:n]
+    kind = "scelle" if raw.get("type") == "scelle" else "carte"
+    nom = text("nom")
+    if not nom:
+        return None
+    e = {"type": kind, "nom": nom, "set_affiche": text("set_affiche") or text("set_api")}
+    uid = text("uid", 40)
+    if uid and all(c.isalnum() or c in "-_" for c in uid):
+        e["uid"] = uid
+    paye = _num(raw.get("prix_paye"))
+    if paye is not None:
+        e["prix_paye"] = paye
+    if kind == "scelle":
+        manuel = _num(raw.get("prix_marche_manuel"))
+        if manuel is not None:
+            e["prix_marche_manuel"] = manuel
+    else:
+        e["set_api"] = text("set_api")
+        e["numero"] = text("numero", 20)
+        if not e["set_api"] or not e["numero"]:
+            return None
+        e["nom_api"] = text("nom_api") or nom
+        ccc = {}
+        for k in ("10", "9.5", "9"):
+            v = _num((raw.get("ccc") or {}).get(k))
+            if v is not None:
+                ccc[k] = v
+        e["ccc"] = ccc
+    return ensure_uid(e)
+
+
+def apply_payload(vault, password):
+    raw = os.environ.get("PAYLOAD", "").strip()
+    if not raw:
+        return
+    try:
+        msg = decrypt(json.loads(raw), password)
+    except (InvalidTag, ValueError, KeyError, TypeError):
+        print("Message du site ignoré (il ne se déchiffre pas avec le mot de passe).")
+        return
+    action = msg.get("action") if isinstance(msg, dict) else None
+    if action == "add":
+        entry = clean_entry(msg.get("entry"))
+        if not entry:
+            print("Ajout ignoré : données incomplètes.")
+            return
+        vault["watchlist"] = [
+            e for e in vault["watchlist"]
+            if ensure_uid(e)["uid"] != entry["uid"] and entry_key(e) != entry_key(entry)
+        ] + [entry]
+        print("Élément ajouté.")
+    elif action == "delete":
+        uid = str(msg.get("uid") or "")
+        before = len(vault["watchlist"])
+        vault["watchlist"] = [e for e in vault["watchlist"] if ensure_uid(e)["uid"] != uid]
+        print("Élément supprimé." if len(vault["watchlist"]) < before else "Suppression : élément introuvable.")
+    else:
+        print("Message ignoré : action inconnue.")
 
 
 # ---------- principal ----------
@@ -116,9 +229,8 @@ def ingest_plain_files(vault):
     wl = DATA / "watchlist.json"
     if wl.exists():
         incoming = json.loads(wl.read_text(encoding="utf-8"))
-        key = lambda e: (e["set_api"].lower(), str(e["numero"]))
-        merged = {key(e): e for e in vault["watchlist"]}
-        merged.update({key(e): e for e in incoming})
+        merged = {entry_key(e): e for e in vault["watchlist"]}
+        merged.update({entry_key(e): e for e in incoming})
         vault["watchlist"] = list(merged.values())
     hist = DATA / "history.json"
     if hist.exists():
@@ -134,41 +246,68 @@ def main():
     today = date.today().isoformat()
     vault = load_vault(password)
     ingest_plain_files(vault)
+    apply_payload(vault, password)
     watchlist, history = vault["watchlist"], vault["history"]
 
-    cards, errors = [], 0
+    previous = {}
+    for c in (vault.get("cards") or {}).get("cards", []):
+        previous[c.get("uid") or c.get("nom")] = c
+
+    cards, errors, api_entries = [], 0, 0
     for entry in watchlist:
+        ensure_uid(entry)
+        if entry.get("type") == "scelle":
+            cid = "scelle-" + entry["uid"]
+            price = entry.get("prix_marche_manuel")
+            cards.append({
+                "id": cid, "uid": entry["uid"], "type": "scelle",
+                "nom": entry["nom"], "set": entry.get("set_affiche"), "numero": None, "image": None,
+                "prix_paye": entry.get("prix_paye", 0),
+                "prix_marche": price, "ccc10": None, "ccc95": None, "ccc9": None,
+            })
+            if price is not None:
+                history.setdefault(cid, {})[today] = price
+            continue
+
+        api_entries += 1
+        failed = False
         try:
             card = find_card(entry)
         except ApiError as exc:
             errors += 1
+            failed = True
             card = None
             print(f"  erreur pour {entry['nom']} : {exc}")
-        cid = card["id"] if card else entry["nom"]
+        old = previous.get(entry["uid"]) or previous.get(entry["nom"]) or {}
+        cid = card["id"] if card else (old.get("id") or entry["nom"])
         price = best_price(card) if card else None
-        image = (card or {}).get("image")
+        image = f"{card['image']}/low.webp" if card and card.get("image") else None
+        if failed:  # l'API ne répond pas : on garde les dernières valeurs connues
+            price, image = old.get("prix_marche"), old.get("image")
         cards.append({
             "id": cid,
+            "uid": entry["uid"],
+            "type": "carte",
             "nom": entry["nom"],
             "set": entry.get("set_affiche"),
             "numero": entry["numero"],
-            "image": f"{image}/low.webp" if image else None,
+            "image": image,
             "prix_paye": entry.get("prix_paye", PRIX_BOOSTER),
             "prix_marche": price,
             "ccc10": entry.get("ccc", {}).get("10"),
             "ccc95": entry.get("ccc", {}).get("9.5"),
             "ccc9": entry.get("ccc", {}).get("9"),
         })
-        if price is not None:
+        if price is not None and not failed:
             history.setdefault(cid, {})[today] = price
 
-    if watchlist and errors == len(watchlist):
-        sys.exit("L'API ne répond pas : aucune donnée modifiée.")
+    if api_entries and errors == api_entries:
+        print("Attention : l'API de prix ne répond pas, les derniers prix connus sont conservés.")
 
     vault["cards"] = {"updated": today, "cards": cards}
     DATA.mkdir(exist_ok=True)
     VAULT.write_text(json.dumps(encrypt(vault, password)), encoding="utf-8")
-    print(f"{len(cards)} cartes mises à jour ({today}) — coffre chiffré enregistré.")
+    print(f"{len(cards)} éléments mis à jour ({today}) — coffre chiffré enregistré.")
 
 
 if __name__ == "__main__":
