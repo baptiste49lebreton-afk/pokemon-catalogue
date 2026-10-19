@@ -57,9 +57,10 @@ button:disabled { opacity:.6; cursor:wait; }
 .chartpanel select { max-width:100%; padding:4px 8px; }
 .chartwrap { display:flex; gap:12px; align-items:flex-start; }
 .chartwrap img { width:44px; height:auto; border-radius:6px; flex:none; }
-.plot { position:relative; flex:1; min-width:0; max-width:880px; }
+.plot { position:relative; flex:1; min-width:0; }
 .plot svg { width:100%; height:auto; display:block; touch-action:pan-y; }
-.tip { position:absolute; pointer-events:none; background:var(--field); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:4px 8px; font-size:.85rem; white-space:nowrap; transform:translate(-50%,-125%); }
+.tip { position:absolute; pointer-events:none; background:var(--field); color:var(--fg); border:1px solid var(--line); border-radius:10px; padding:6px 10px; font-size:.85rem; line-height:1.3; white-space:nowrap; transform:translate(-50%,-135%); box-shadow:0 6px 18px rgba(0,0,0,.25); }
+.tip strong { display:block; font-size:.95rem; }
 .sum { margin:6px 0 0; font-size:.8rem; color:var(--muted); }
 details.tv { margin-top:8px; font-size:.85rem; color:var(--muted); }
 details.tv table { margin-top:6px; max-width:320px; }
@@ -126,6 +127,12 @@ button.ic svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-
 .ggain { font-size:.85rem; font-variant-numeric:tabular-nums; }
 .hide-money .money, .hide-money .plot svg, .hide-money #chartSum, .hide-money #chartTable { filter:blur(7px); user-select:none; }
 .hide-money .tip { display:none; }
+#chartTitle { font:600 .75rem system-ui, sans-serif; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+#ranges { border:0; background:color-mix(in srgb, var(--fg) 7%, transparent); border-radius:12px; padding:4px; gap:2px; }
+#ranges button { border-radius:9px; padding:6px 13px; }
+.legend:empty { display:none; }
+.charthead { flex-wrap:wrap; }
+.chartpanel select { min-width:0; }
 [hidden] { display:none !important; }
 </style>
 </head>
@@ -501,6 +508,8 @@ function showZoom(img, src) {
 }
 function hideZoom() { $("zoom").style.display = "none"; }
 addEventListener("scroll", hideZoom, true);
+let resizeTimer = null;
+addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (!$("chartPanel").hidden) renderChart(); }, 150); });
 
 // ---------- graphique ----------
 const SVGNS = "http://www.w3.org/2000/svg";
@@ -576,7 +585,7 @@ function rangePts(pts) {
   const last = Date.parse(pts[pts.length - 1].d + "T00:00:00Z"), min = last - Number(chartRange) * 864e5;
   return pts.filter(p => Date.parse(p.d + "T00:00:00Z") >= min);
 }
-const RANGE_LABEL = { "30": "30 jours", "90": "3 mois", "365": "1 an" };
+const fullDate = d => new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
 
 function renderChart() {
   if ($("chartPanel").hidden) return;
@@ -598,36 +607,43 @@ function renderChart() {
   const delta = $("chartDelta"), legend = $("chartLegend");
   document.querySelectorAll("#ranges button").forEach(b => b.classList.toggle("on", b.dataset.r === chartRange));
   $("chartTable").replaceChildren(); delta.replaceChildren(); legend.replaceChildren(); sum.textContent = "";
-  $("chartNote").textContent = "Estimation : prix Cardmarket relevés chaque matin (toutes langues), ou ton prix français saisi à la main."
-    + (chartSel === "all" ? " La courbe monte aussi quand tu ajoutes une carte." : "");
+  $("chartTitle").textContent = card ? "Modifier et suivre le prix" : "Évolution de la valeur";
+  $("chartNote").textContent = "Estimation : " + (chartSel === "all"
+    ? "chaque carte compte à partir de son premier relevé de prix (un relevé par matin)."
+    : "prix Cardmarket relevé chaque matin (toutes langues), ou ton prix français saisi à la main.")
+    + " La ligne en pointillés est ce que tu as investi.";
   if (!cards.length) { plot.replaceChildren(); sum.textContent = "Ajoute une carte pour voir son évolution."; return; }
   if (!pts.length) { plot.replaceChildren(); sum.textContent = "Pas encore de prix enregistré : le premier relevé arrive à la prochaine mise à jour du matin."; return; }
 
   const paid = card ? (card.prix_paye || 0) * qOf(card) : totals().paid;
-  const W = 640, H = 220, L = 54, R = 12, T = 12, B = 26;
+  const W = Math.max(300, Math.round(plot.clientWidth) || 640), H = W > 700 ? 210 : 190, L = 62, R = 8, T = 10, B = 24;
   let lo = Math.min(...pts.map(p => p.v)), hi = Math.max(...pts.map(p => p.v));
   const showPaid = paid > 0 && paid >= lo * 0.5;                 // la ligne « investi » n'écrase pas la courbe
   if (showPaid) { lo = Math.min(lo, paid); hi = Math.max(hi, paid); }
   if (hi - lo < 0.01) { lo -= 1; hi += 1; } else { const pad = (hi - lo) * 0.1; lo -= pad; hi += pad; }
   lo = Math.max(0, lo);
   const t = d => Date.parse(d + "T00:00:00Z");
-  const t0 = t(pts[0].d), t1 = t(pts[pts.length - 1].d);
+  const t0 = t(pts[0].d), t1 = t(pts[pts.length - 1].d), spanDays = (t1 - t0) / 864e5;
   const X = p => pts.length === 1 || t1 === t0 ? L + (W - L - R) / 2 : L + (t(p.d) - t0) / (t1 - t0) * (W - L - R);
   const Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
   const money0 = v => v.toLocaleString("fr-FR", { maximumFractionDigits: hi - lo >= 10 ? 0 : 2, minimumFractionDigits: hi - lo >= 10 ? 0 : 2 }) + " €";
 
   const svg = sv("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
     "aria-label": "Courbe de la valeur, " + pts.length + " relevé" + (pts.length > 1 ? "s" : "") });
-  for (let i = 0; i < 4; i++) {
-    const v = lo + (hi - lo) * i / 3, y = Y(v);
+  const grad = sv("linearGradient", { id: "cg", x1: 0, y1: 0, x2: 0, y2: 1 });
+  grad.append(sv("stop", { offset: 0, "stop-color": "var(--accent)", "stop-opacity": 0.38 }), sv("stop", { offset: 1, "stop-color": "var(--accent)", "stop-opacity": 0.02 }));
+  const defs = sv("defs", {}); defs.append(grad); svg.append(defs);
+  for (let i = 0; i < 3; i++) {
+    const v = lo + (hi - lo) * i / 2, y = Y(v);
     svg.append(sv("line", { x1: L, x2: W - R, y1: y, y2: y, stroke: "var(--line)", "stroke-width": 1 }));
-    const lab = sv("text", { x: L - 8, y: y + 4, "text-anchor": "end", fill: "var(--muted)", "font-size": 11 });
+    const lab = sv("text", { x: L - 10, y: y + 4, "text-anchor": "end", fill: "var(--muted)", "font-size": 12 });
     lab.textContent = money0(v); svg.append(lab);
   }
-  const xl = (x, d, anchor) => { const e = sv("text", { x, y: H - 8, "text-anchor": anchor, fill: "var(--muted)", "font-size": 11 }); e.textContent = shortDate(d); svg.append(e); };
+  const dayLabel = d => spanDays >= 60 ? new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { month: "short", year: "2-digit" }) : shortDate(d);
+  const xl = (x, d, anchor) => { const e = sv("text", { x, y: H - 6, "text-anchor": anchor, fill: "var(--muted)", "font-size": 12 }); e.textContent = dayLabel(d); svg.append(e); };
   if (pts.length === 1) xl(X(pts[0]), pts[0].d, "middle");
   else {
-    const n = (t1 - t0) / 864e5 >= 3 ? 4 : 2;
+    const n = spanDays >= 7 ? 3 : 2;
     for (let i = 0; i < n; i++) {
       const f = i / (n - 1);
       xl(L + f * (W - L - R), new Date(t0 + f * (t1 - t0)).toISOString().slice(0, 10), i === 0 ? "start" : i === n - 1 ? "end" : "middle");
@@ -636,19 +652,20 @@ function renderChart() {
   const linePts = pts.map(p => X(p).toFixed(1) + "," + Y(p.v).toFixed(1)).join(" ");
   if (pts.length > 1) {
     const base = H - B;
-    svg.append(sv("polygon", { points: linePts + " " + X(pts[pts.length - 1]).toFixed(1) + "," + base + " " + X(pts[0]).toFixed(1) + "," + base,
-      fill: "var(--accent)", "fill-opacity": 0.15 }));
+    svg.append(sv("polygon", { points: linePts + " " + X(pts[pts.length - 1]).toFixed(1) + "," + base + " " + X(pts[0]).toFixed(1) + "," + base, fill: "url(#cg)" }));
   }
-  if (showPaid)
-    svg.append(sv("line", { x1: L, x2: W - R, y1: Y(paid), y2: Y(paid), stroke: "var(--muted)", "stroke-width": 1.6, "stroke-dasharray": "2 5", "stroke-linecap": "round" }));
+  if (showPaid) {
+    const y = Y(paid);
+    svg.append(sv("line", { x1: L, x2: W - R, y1: y, y2: y, stroke: "var(--fg)", "stroke-opacity": 0.65, "stroke-width": 1.5, "stroke-dasharray": "4 4" }));
+    const tx = sv("text", { x: L + 8, y: y - 7, fill: "var(--muted)", "font-size": 12, "font-weight": 600 }); tx.textContent = "Investi"; svg.append(tx);
+  }
   if (pts.length > 1)
     svg.append(sv("polyline", { pathLength: 1, points: linePts,
       fill: "none", stroke: "var(--accent)", "stroke-width": 2.2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
-  (pts.length <= 40 ? pts : [pts[pts.length - 1]]).forEach(p =>
-    svg.append(sv("circle", { cx: X(p), cy: Y(p.v), r: 3, fill: "var(--accent)", stroke: "var(--bg)", "stroke-width": 2 })));
+  else svg.append(sv("circle", { cx: X(pts[0]), cy: Y(pts[0].v), r: 4, fill: "var(--accent)" }));
 
-  const cross = sv("line", { y1: T, y2: H - B, stroke: "var(--muted)", "stroke-width": 1, visibility: "hidden" });
-  const dot = sv("circle", { r: 6, fill: "var(--accent)", stroke: "var(--bg)", "stroke-width": 2, visibility: "hidden" });
+  const cross = sv("line", { y1: T, y2: H - B, stroke: "var(--muted)", "stroke-opacity": 0.6, "stroke-width": 1, visibility: "hidden" });
+  const dot = sv("circle", { r: 4.5, fill: "var(--accent)", stroke: "var(--bg)", "stroke-width": 2, visibility: "hidden" });
   const hit = sv("rect", { x: 0, y: 0, width: W, height: H, fill: "transparent" });
   svg.append(cross, dot, hit);
   if (animateNext) { svg.classList.add("draw"); animateNext = false; }
@@ -661,8 +678,8 @@ function renderChart() {
     const x = X(best), y = Y(best.v);
     cross.setAttribute("x1", x); cross.setAttribute("x2", x); cross.setAttribute("visibility", "visible");
     dot.setAttribute("cx", x); dot.setAttribute("cy", y); dot.setAttribute("visibility", "visible");
-    tip.textContent = shortDate(best.d) + " · " + fmt(best.v);
-    tip.style.left = (x / W * 100) + "%"; tip.style.top = (y / H * 100) + "%"; tip.hidden = false;
+    tip.replaceChildren(el("strong", "", fmt(best.v)), el("span", "meta", fullDate(best.d)));
+    tip.style.left = Math.min(92, Math.max(8, x / W * 100)) + "%"; tip.style.top = (y / H * 100) + "%"; tip.hidden = false;
   };
   const hide = () => { cross.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden"); tip.hidden = true; };
   hit.addEventListener("pointermove", show); hit.addEventListener("pointerdown", show);
@@ -675,12 +692,9 @@ function renderChart() {
   } else {
     const pct = first.v > 0 ? diff / first.v * 100 : null, dir = diff >= 0 ? "up" : "down";
     const pill = el("span", "pill " + dir); pill.append(el("span", "money", signed(diff)), pct == null ? "" : " · " + signedPct(pct));
-    delta.append(el("strong", "money", fmt(last.v)), pill,
-      el("span", "meta", chartRange === "all" ? "depuis le " + shortDate(first.d) : "sur " + RANGE_LABEL[chartRange] + " (depuis le " + shortDate(first.d) + ")"));
+    delta.append(pill, el("span", "meta", "depuis le " + fullDate(first.d)));
   }
-  const l1 = el("span"); l1.append(el("i"), "Valeur estimée");
-  const l2 = el("span"); l2.append(el("i", "dot"), "Investi : ", el("span", "money", fmt(paid)), showPaid ? "" : " (hors graphique)");
-  legend.append(l1, l2);
+  if (!showPaid) { const l2 = el("span"); l2.append("Investi : ", el("span", "money", fmt(paid)), " (hors graphique)"); legend.append(l2); }
 
   const tb = el("table"), body = el("tbody");
   pts.slice().reverse().forEach(p => { const tr = el("tr"); tr.append(el("td", "", shortDate(p.d)), el("td", "r", fmt(p.v))); body.append(tr); });
