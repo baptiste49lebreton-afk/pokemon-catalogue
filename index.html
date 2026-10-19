@@ -356,10 +356,13 @@ function showZoom(img, src) {
   const z = $("zoom"), big = src.replace("/low.webp", "/high.webp");
   z.onerror = () => { z.onerror = null; z.src = src; };
   z.src = big;
-  const r = img.getBoundingClientRect(), w = 270, h = w * 1.4;
-  let x = r.right + 14; if (x + w > innerWidth - 8) x = Math.max(8, r.left - w - 14);
+  const r = img.getBoundingClientRect();
+  let w = Math.min(270, r.left - 22), x;                  // à gauche de la carte, le plus grand possible
+  if (w >= 170) x = r.left - w - 14;
+  else { w = 270; x = Math.min(r.right + 14, Math.max(8, innerWidth - w - 8)); }   // pas de place : à droite
+  const h = w * 1.4;
   const y = Math.min(Math.max(8, r.top + r.height / 2 - h / 2), Math.max(8, innerHeight - h - 8));
-  z.style.left = x + "px"; z.style.top = y + "px"; z.style.display = "block";
+  z.style.width = w + "px"; z.style.left = x + "px"; z.style.top = y + "px"; z.style.display = "block";
 }
 function hideZoom() { $("zoom").style.display = "none"; }
 addEventListener("scroll", hideZoom, true);
