@@ -62,6 +62,7 @@ button:disabled { opacity:.6; cursor:wait; }
     <div class="totals" id="totals"></div>
     <div class="bar">
       <button type="button" id="btnAdd">+ Ajouter</button>
+      <button type="button" class="ghost" id="btnMic" hidden>🎤 Dicter</button>
       <button type="button" class="ghost" id="btnRefresh">Actualiser</button>
       <button type="button" class="ghost" id="btnToken">Accès</button>
     </div>
@@ -86,8 +87,11 @@ button:disabled { opacity:.6; cursor:wait; }
     <p class="help" id="addHelp">Pour une carte : nom, extension et numéro suffisent. Le prix du marché est cherché tout seul.</p>
     <div class="row">
       <button type="submit" id="fGo">Enregistrer</button>
+      <button type="button" class="ghost" id="fMic" hidden>🎤 Dicter</button>
       <button type="button" class="ghost" id="fCancel">Annuler</button>
     </div>
+    <p class="help" id="heard" role="status"></p>
+    <p class="help" id="micNote" hidden>Dictée : dis par exemple « Ajoute Dracaufeu ex, extension 151, numéro 199, payé 5,99 euros » ou « Ajoute produit scellé display 151, payé 110 euros, valeur 190 euros ». Ton navigateur envoie la voix à son service de reconnaissance (Google pour Chrome). Rien n'est enregistré sans ton clic sur « Enregistrer ».</p>
     <p class="err" id="fErr" role="alert"></p>
   </form>
 
@@ -262,6 +266,81 @@ function draw(updated) {
     tile("Mis à jour", lastUpdated || "—", "", true));
 }
 
+function parseDictation(raw) {
+  const W = (src, flags) => new RegExp("(?<![\\p{L}\\d])(?:" + src + ")(?![\\p{L}\\d])", (flags || "") + "u");
+  let t = " " + String(raw || "").toLowerCase().replace(/€/g, " euros ").replace(/\s+/g, " ").trim() + " ";
+  const MARK = {
+    set:    W("extensions?|set|série|serie|bloc"),
+    numero: W("numéro|numero|n°|n o"),
+    paye:   W("payée?s?|achetée?s?|prix payé"),
+    marche: W("valeur|vaut|marché|marche|cote|prix du marché"),
+  };
+  const found = [];
+  for (const [key, re] of Object.entries(MARK)) {
+    const m = re.exec(t); if (m) found.push({ key, start: m.index, end: m.index + m[0].length });
+  }
+  found.sort((a, b) => a.start - b.start);
+  const seg = {};
+  found.forEach((f, i) => { seg[f.key] = t.slice(f.end, i + 1 < found.length ? found[i + 1].start : t.length).trim(); });
+  let head = (found.length ? t.slice(0, found[0].start) : t).trim();
+  const scelle = W("scellée?s?|sealed").test(t);
+  head = head.replace(W("scellée?s?|sealed|produits?", "g"), " ")
+             .replace(/^\s*(?:ajoute|ajouter|rajoute|rajouter|ajout de|ajout)(?![\p{L}\d])/u, "")
+             .replace(/^\s*(?:(?:une|un|la|le|ma|mon|cette|ce|des|les|carte|cartes)(?![\p{L}\d])\s*)+/u, "")
+             .replace(/\s+/g, " ").trim();
+  const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
+  const amount = s => {
+    if (!s) return null;
+    const m = /(\d+)(?:[.,](\d{1,2}))?(?:\s*euros?)?(?:\s*(?:et\s*)?(\d{1,2})\b(?!\s*(?:euros?|\d)))?/.exec(s.replace(/(\d)\s+(?=\d{3}\b)/g, "$1"));
+    if (!m) return null;
+    if (m[2] != null) return parseFloat(m[1] + "." + m[2]);
+    if (m[3] != null && /euros?/.test(s)) return parseFloat(m[1] + "." + m[3].padStart(2, "0"));
+    return parseFloat(m[1]);
+  };
+  const numero = seg.numero ? (/\d+/.exec(seg.numero.replace(/(\d)\s+(?=\d)/g, "$1")) || [null])[0] : null;
+  return {
+    type: scelle ? "scelle" : "carte",
+    nom: cap(head),
+    set: seg.set ? seg.set.replace(/\s+/g, " ").trim() : "",
+    numero: numero || "",
+    paye: amount(seg.paye),
+    marche: amount(seg.marche),
+  };
+}
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+const capFirst = t => t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+function applyDictation(text) {
+  const r = parseDictation(text);
+  $("heard").textContent = "J'ai entendu : « " + text + " ». Vérifie les champs, puis clique sur « Enregistrer ».";
+  $("fType").value = r.type; toggleType();
+  if (r.nom) $("fNom").value = r.nom;
+  if (r.set) $("fSet").value = capFirst(r.set);
+  if (r.numero) $("fNum").value = r.numero;
+  if (r.paye != null) $("fPaye").value = String(r.paye).replace(".", ",");
+  if (r.marche != null && r.type === "scelle") $("fMarche").value = String(r.marche).replace(".", ",");
+}
+function dictate() {
+  if (!SR) return;
+  if (rec) { rec.stop(); return; }
+  $("addPanel").hidden = false;
+  const r = new SR();
+  r.lang = "fr-FR"; r.interimResults = false; r.continuous = false; r.maxAlternatives = 1;
+  r.onresult = e => applyDictation(e.results[0][0].transcript);
+  r.onerror = e => {
+    $("heard").textContent = (e.error === "not-allowed" || e.error === "service-not-allowed")
+      ? "Micro refusé : autorise-le dans ton navigateur pour ce site."
+      : e.error === "no-speech" ? "Je n'ai rien entendu, réessaie." : "La dictée a échoué (" + e.error + ").";
+  };
+  r.onend = () => { rec = null; $("fMic").textContent = "🎤 Dicter"; $("btnMic").textContent = "🎤 Dicter"; };
+  try {
+    rec = r; r.start();
+    $("fMic").textContent = "⏹ J'écoute…"; $("btnMic").textContent = "⏹ J'écoute…";
+    $("heard").textContent = "";
+  } catch (e) { rec = null; }
+}
+
 // ---------- actions ----------
 function num(v) {
   const s = String(v || "").trim().replace(",", ".");
@@ -373,6 +452,9 @@ $("tokenPanel").addEventListener("submit", ev => {
   const t = $("tokenIn").value.trim();
   if (t) { setToken(t); $("tokenIn").value = ""; $("tokenState").textContent = "Jeton enregistré dans ce navigateur."; }
 });
+if (SR) { $("btnMic").hidden = false; $("fMic").hidden = false; $("micNote").hidden = false; }
+$("btnMic").addEventListener("click", dictate);
+$("fMic").addEventListener("click", dictate);
 toggleType();
 
 try {
