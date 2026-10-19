@@ -3,12 +3,13 @@
 Met à jour data/cards.json (cartes, images, prix du jour) à partir de data/watchlist.json,
 et ajoute le prix du jour dans data/history.json.
 
-Données : API publique pokemontcg.io (images et prix Cardmarket/TCGplayer).
+Données : API publique TCGdex (https://tcgdex.dev), gratuite et sans clé.
+Prix : Cardmarket (EUR) en priorité, sinon TCGplayer (USD).
 Les prix CCC viennent de watchlist.json (estimations saisies à la main).
 Stdlib uniquement.
 """
 import json
-import os
+import sys
 import urllib.parse
 import urllib.request
 from datetime import date
@@ -16,38 +17,58 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
-API = "https://api.pokemontcg.io/v2/cards"
+API = "https://api.tcgdex.net/v2/en"
 PRIX_BOOSTER = 5.99
 
 
-def api_get(query):
-    headers = {}
-    key = os.environ.get("POKEMON_TCG_API_KEY")
-    if key:
-        headers["X-Api-Key"] = key
-    req = urllib.request.Request(f"{API}?{urllib.parse.urlencode({'q': query, 'pageSize': 50})}", headers=headers)
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.load(resp).get("data", [])
+class ApiError(Exception):
+    pass
+
+
+def api_get(path, params=None):
+    url = f"{API}/{path}"
+    if params:
+        url += "?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "pokemon-catalogue/1.0 (suivi perso de collection)",
+        "Accept": "application/json",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return json.load(resp)
+    except Exception as exc:  # réseau, 403, 404, JSON invalide...
+        raise ApiError(f"{url} -> {exc}") from exc
+
+
+def find_set_id(set_name):
+    """Trouve l'identifiant de l'extension (ex. 'Black Bolt') par son nom exact."""
+    results = api_get("sets", {"name": set_name}) or []
+    wanted = set_name.strip().lower()
+    for s in results:
+        if (s.get("name") or "").strip().lower() == wanted:
+            return s["id"]
+    return results[0]["id"] if results else None
 
 
 def find_card(entry):
-    """Cherche la carte par nom + numéro, puis filtre sur le nom de l'extension."""
-    query = f'name:"{entry["nom_api"]}" number:{entry["numero"]}'
-    matches = api_get(query)
-    for c in matches:
-        if entry["set_api"].lower() in (c.get("set", {}).get("name") or "").lower():
-            return c
-    return None
+    """Récupère la fiche complète (avec prix) via extension + numéro de la carte."""
+    set_id = find_set_id(entry["set_api"])
+    if not set_id:
+        print(f"  extension introuvable : {entry['set_api']}")
+        return None
+    return api_get(f"sets/{set_id}/{entry['numero']}")
 
 
 def best_price(card):
-    cm = (card.get("cardmarket") or {}).get("prices") or {}
-    if cm.get("trendPrice"):
-        return cm["trendPrice"]
-    tcg = (card.get("tcgplayer") or {}).get("prices") or {}
+    pricing = (card or {}).get("pricing") or {}
+    cm = pricing.get("cardmarket") or {}
+    for key in ("trend", "trend-holo", "avg", "avg-holo"):
+        if cm.get(key):
+            return cm[key]
+    tcg = pricing.get("tcgplayer") or {}
     for variant in tcg.values():
-        if variant.get("market"):
-            return variant["market"]
+        if isinstance(variant, dict) and variant.get("marketPrice"):
+            return variant["marketPrice"]
     return None
 
 
@@ -57,17 +78,23 @@ def main():
     cards, history_path = [], DATA / "history.json"
     history = json.loads(history_path.read_text(encoding="utf-8")) if history_path.exists() else {}
 
+    errors = 0
     for entry in watchlist:
-        card = find_card(entry)
+        try:
+            card = find_card(entry)
+        except ApiError as exc:
+            errors += 1
+            card = None
+            print(f"  erreur pour {entry['nom']} : {exc}")
         cid = card["id"] if card else entry["nom"]
         price = best_price(card) if card else None
-        images = (card or {}).get("images") or {}
+        image = (card or {}).get("image")
         cards.append({
             "id": cid,
             "nom": entry["nom"],
             "set": entry.get("set_affiche"),
             "numero": entry["numero"],
-            "image": images.get("small"),
+            "image": f"{image}/low.webp" if image else None,
             "prix_paye": entry.get("prix_paye", PRIX_BOOSTER),
             "prix_marche": price,
             "ccc10": entry.get("ccc", {}).get("10"),
@@ -76,6 +103,11 @@ def main():
         })
         if price is not None:
             history.setdefault(cid, {})[today] = price
+
+    # Si l'API ne répond pas du tout, on ne touche à rien (on garde les anciennes données).
+    if watchlist and errors == len(watchlist):
+        print("L'API ne répond pas : aucune donnée modifiée.")
+        sys.exit(1)
 
     DATA.mkdir(exist_ok=True)
     (DATA / "cards.json").write_text(
