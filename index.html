@@ -386,7 +386,12 @@ const cccEst = (k, price) => price == null ? null : Math.round(price * CCC_COEF[
 const isAuto = (c, k) => (c.ccc_auto || []).includes(k);
 function cccTd(c, k, val) {
   const auto = val != null && isAuto(c, k), td = moneyTd(auto ? "≈ " + fmt(val) : fmt(val));
-  if (auto) td.style.color = "var(--muted)";
+  if (auto) td.firstChild.style.color = "var(--muted)";
+  if (val != null && c.prix_marche != null) {
+    const d = val - c.prix_marche, e = el("div", "meta money " + (d >= 0 ? "up" : "down"), signed(d));
+    e.title = "Écart avec le prix actuel de la carte (" + fmt(c.prix_marche) + ")";
+    td.append(e);
+  }
   return td;
 }
 function moneyTd(text) { const td = el("td", "r"); td.append(el("div", "money", text)); return td; }
