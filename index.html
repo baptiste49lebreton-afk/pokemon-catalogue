@@ -256,7 +256,7 @@ function draw(updated) {
   const head = el("tr");
   [["", ""], ["Élément", ""], ["Payé", "r"], ["Marché", "r"], ["Écart", "r"],
    ["CCC 10 (est.)", "r"], ["CCC 9.5 (est.)", "r"], ["CCC 9 (est.)", "r"], ["", ""]]
-    .forEach(([t, c]) => { const th = el("th", c, t); if (t === "Marché") th.title = "Prix « tendance » Cardmarket en euros (toutes langues et tous états confondus)"; head.append(th); });
+    .forEach(([t, c]) => { const th = el("th", c, t); if (t === "Marché") th.title = "Cartes françaises : médiane des offres les moins chères sur CardTrader (en euros, bon état). Sans prix français disponible : « — »."; head.append(th); });
   const thead = el("thead"); thead.append(head);
   const tbody = el("tbody");
   table.append(thead, tbody);
@@ -286,8 +286,14 @@ function draw(updated) {
       b.addEventListener("click", () => removeItem(c));
       del.append(b);
     }
+    const mk = el("td", "r");
+    mk.append(el("div", "", fmt(c.prix_marche)));
+    const cap = c.source === "fr"
+      ? (c.prix_marche != null ? "FR" + (c.fr_n ? " · " + c.fr_n + " offre" + (c.fr_n > 1 ? "s" : "") : "") : "pas d'offre FR")
+      : c.source === "cm" && c.prix_marche != null ? "toutes langues" : "";
+    if (cap) { const m = el("div", "meta", cap); m.style.whiteSpace = "nowrap"; mk.append(m); }
     tr.append(imgCell, info,
-      el("td", "r", fmt(c.prix_paye)), el("td", "r", fmt(c.prix_marche)),
+      el("td", "r", fmt(c.prix_paye)), mk,
       el("td", "r " + (gain == null ? "" : gain >= 0 ? "up" : "down"), signed(gain)),
       el("td", "r", fmt(c.ccc10)), el("td", "r", fmt(c.ccc95)), el("td", "r", fmt(c.ccc9)), del);
     tbody.append(tr);
