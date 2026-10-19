@@ -27,6 +27,11 @@ th { color:var(--muted); font-size:.75rem; text-transform:uppercase; letter-spac
 .r { text-align:right; }
 td.img img { width:56px; height:auto; border-radius:4px; display:block; }
 .name { font-weight:600; }
+#zoom { position:fixed; z-index:50; width:270px; height:auto; border-radius:12px; box-shadow:0 12px 34px rgba(0,0,0,.5); pointer-events:none; display:none; background:var(--panel); }
+td.img img { cursor:zoom-in; }
+.editform { margin:2px 0 14px; padding-bottom:14px; border-bottom:1px solid var(--line); }
+.editform .row { align-items:center; margin-top:10px; }
+.editform .grid { grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); }
 .meta { color:var(--muted); font-size:.85rem; }
 .up { color:var(--up); } .down { color:var(--down); }
 tr.pending { opacity:.55; }
@@ -104,6 +109,7 @@ tbody tr.clk:hover td { background:var(--panel); }
       <label>Extension <input id="fSet" maxlength="120" placeholder="ex. 151 ou Foudre Noire"></label>
       <label>Numéro <input id="fNum" maxlength="20" inputmode="text" placeholder="ex. 199"></label>
       <label>Prix payé (€) <input id="fPaye" inputmode="decimal" placeholder="vide = 5,99"></label>
+      <label>Quantité <input id="fQ" inputmode="numeric" placeholder="1"></label>
       <label>Prix français (€) <input id="fFr" inputmode="decimal" placeholder="vide = automatique"></label>
       <label>CCC 10 (€) <input id="fC10" inputmode="decimal"></label>
       <label>CCC 9.5 (€) <input id="fC95" inputmode="decimal"></label>
@@ -133,7 +139,18 @@ tbody tr.clk:hover td { background:var(--panel); }
   </form>
 
   <section class="panel chartpanel" id="chartPanel" hidden>
-    <div class="charthead"><h2>Évolution des prix</h2><select id="chartSel"></select><button type="button" class="ghost" id="chartClose">Masquer</button></div>
+    <div class="charthead"><h2 id="chartTitle">Évolution des prix</h2><select id="chartSel"></select><button type="button" class="ghost" id="chartClose">Masquer</button></div>
+    <form class="editform" id="editForm" hidden autocomplete="off">
+      <div class="grid">
+        <label>Prix payé (€) <input id="eP" inputmode="decimal" placeholder="vide = 5,99"></label>
+        <label>Quantité <input id="eQ" inputmode="numeric" placeholder="1"></label>
+        <label>Prix français (€) <input id="eFr" inputmode="decimal" placeholder="vide = automatique"></label>
+        <label>CCC 10 (€) <input id="eC10" inputmode="decimal"></label>
+        <label>CCC 9.5 (€) <input id="eC95" inputmode="decimal"></label>
+        <label>CCC 9 (€) <input id="eC9" inputmode="decimal"></label>
+      </div>
+      <div class="row"><button type="submit" id="eSave">Enregistrer les modifications</button><span class="err" id="eErr" role="alert"></span></div>
+    </form>
     <div class="chartwrap">
       <img id="chartImg" alt="" hidden>
       <div class="plot" id="plot"></div>
@@ -143,6 +160,7 @@ tbody tr.clk:hover td { background:var(--panel); }
   </section>
 
   <div class="wrap" id="list"></div>
+  <img id="zoom" alt="">
 </main>
 
 <script>
@@ -263,17 +281,20 @@ function draw(updated) {
   table.append(thead, tbody);
 
   cards.forEach(c => {
-    const gain = c.prix_marche != null ? c.prix_marche - c.prix_paye : null;
-    if (c.prix_marche != null) { now += c.prix_marche; nowCount++; }
-    paid += c.prix_paye || 0;
+    const q = c.quantite > 1 ? c.quantite : 1;
+    const gain = c.prix_marche != null ? (c.prix_marche - c.prix_paye) * q : null;
+    if (c.prix_marche != null) { now += c.prix_marche * q; nowCount++; }
+    paid += (c.prix_paye || 0) * q;
     const tr = el("tr", c.pending ? "pending" : "");
     const imgCell = el("td", "img");
     if (c.image && c.image.startsWith("https://assets.tcgdex.net/")) {
       const img = el("img"); img.src = c.image; img.alt = ""; img.referrerPolicy = "no-referrer";
       imgCell.append(img);
+      img.addEventListener("mouseenter", () => showZoom(img, c.image));
+      img.addEventListener("mouseleave", hideZoom);
     }
     const info = el("td");
-    const metaParts = [c.set, c.numero].filter(Boolean).join(" · ");
+    const metaParts = [c.set, c.numero, q > 1 ? "× " + q + " exemplaires" : ""].filter(Boolean).join(" · ");
     if (c.id) {
       tr.classList.add("clk"); tr.title = "Clique pour suivre l'évolution du prix"; tr.tabIndex = 0;
       tr.addEventListener("click", ev => { if (!ev.target.closest("button, input, a")) openChart(c.id); });
@@ -310,7 +331,8 @@ function draw(updated) {
     }
     tr.append(imgCell, info,
       el("td", "r", fmt(c.prix_paye)), mk,
-      el("td", "r " + (gain == null ? "" : gain >= 0 ? "up" : "down"), signed(gain)),
+      (() => { const g = el("td", "r " + (gain == null ? "" : gain >= 0 ? "up" : "down")); g.append(el("div", "", signed(gain)));
+        if (q > 1 && gain != null) g.append(el("div", "meta", "pour " + q)); return g; })(),
       el("td", "r", fmt(c.ccc10)), el("td", "r", fmt(c.ccc95)), el("td", "r", fmt(c.ccc9)), del);
     tbody.append(tr);
   });
@@ -329,6 +351,19 @@ function draw(updated) {
   renderChart();
 }
 
+// ---------- agrandissement de la carte au survol ----------
+function showZoom(img, src) {
+  const z = $("zoom"), big = src.replace("/low.webp", "/high.webp");
+  z.onerror = () => { z.onerror = null; z.src = src; };
+  z.src = big;
+  const r = img.getBoundingClientRect(), w = 270, h = w * 1.4;
+  let x = r.right + 14; if (x + w > innerWidth - 8) x = Math.max(8, r.left - w - 14);
+  const y = Math.min(Math.max(8, r.top + r.height / 2 - h / 2), Math.max(8, innerHeight - h - 8));
+  z.style.left = x + "px"; z.style.top = y + "px"; z.style.display = "block";
+}
+function hideZoom() { $("zoom").style.display = "none"; }
+addEventListener("scroll", hideZoom, true);
+
 // ---------- graphique ----------
 const SVGNS = "http://www.w3.org/2000/svg";
 const sv = (tag, attrs) => { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
@@ -342,20 +377,58 @@ function openChart(id, forceOpen) {
   draw();
   p.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
-function closeChart() { $("chartPanel").hidden = true; draw(); }
+function closeChart() { $("chartPanel").hidden = true; editUid = null; draw(); }
 
 function chartPoints() {
   const hist = (state.vault && state.vault.history) || {};
   const cards = state.cards.filter(c => !c.pending && c.id);
   const sorted = id => Object.entries(hist[id] || {}).sort((a, b) => a[0] < b[0] ? -1 : 1);
   if (chartSel !== "all") return sorted(chartSel).map(p => ({ d: p[0], v: p[1] }));
-  const lists = cards.map(c => sorted(c.id)).filter(l => l.length);
+  const lists = cards.map(c => sorted(c.id).map(p => [p[0], p[1] * (c.quantite > 1 ? c.quantite : 1)])).filter(l => l.length);
   const dates = [...new Set(lists.flatMap(l => l.map(p => p[0])))].sort();
   return dates.map(d => ({ d, v: lists.reduce((sum, l) => {
     let last = null;
     for (const p of l) { if (p[0] <= d) last = p[1]; else break; }
     return last == null ? sum : sum + last;
   }, 0) }));
+}
+
+let editUid = null;
+function fillEdit(c) {
+  const f = $("editForm");
+  if (!c) { f.hidden = true; editUid = null; return; }
+  f.hidden = false;
+  if (editUid === c.uid) return;                 // ne pas écraser ce que tu es en train de taper
+  editUid = c.uid;
+  const v = x => x == null ? "" : String(x).replace(".", ",");
+  $("eP").value = v(c.prix_paye === 5.99 ? "" : c.prix_paye);
+  $("eQ").value = c.quantite > 1 ? c.quantite : "";
+  $("eFr").value = v(c.prix_fr);
+  $("eC10").value = v(c.ccc10); $("eC95").value = v(c.ccc95); $("eC9").value = v(c.ccc9);
+  $("eErr").textContent = "";
+}
+async function saveEdit(ev) {
+  ev.preventDefault();
+  const c = state.cards.find(x => x.id === chartSel && x.uid);
+  if (!c) return;
+  const err = $("eErr"); err.textContent = "";
+  const paye = num($("eP").value), fr = num($("eFr").value);
+  const c10 = num($("eC10").value), c95 = num($("eC95").value), c9 = num($("eC9").value);
+  if ([paye, fr, c10, c95, c9].some(Number.isNaN)) { err.textContent = "Un des prix est invalide."; return; }
+  const qs = $("eQ").value.trim(), qn = qs === "" ? 1 : Number(qs);
+  if (!Number.isInteger(qn) || qn < 1 || qn > 999) { err.textContent = "La quantité doit être un nombre entier (1 ou plus)."; return; }
+  const fields = { prix_paye: paye, quantite: qn, prix_fr: fr, ccc: { "10": c10, "9.5": c95, "9": c9 } };
+  $("eSave").disabled = true;
+  const same = (a, b) => (a == null ? null : a) === (b == null ? null : b);
+  editUid = null;
+  await change({ action: "update_entry", uid: c.uid, fields },
+    cards => cards.map(x => x.uid !== c.uid ? x : Object.assign({}, x, {
+      prix_paye: paye == null ? 5.99 : paye, quantite: qn, prix_fr: fr, ccc10: c10, ccc95: c95, ccc9: c9,
+      source: fr != null ? "manuel" : (x.source === "manuel" ? "cm" : x.source),
+      prix_marche: fr != null ? fr : (x.source === "manuel" && x.prix_cm != null ? x.prix_cm : x.prix_marche) })),
+    v => v.watchlist.some(e => e.uid === c.uid && same(e.prix_paye, paye) && (e.quantite || 1) === qn && same(e.prix_fr, fr)
+      && same((e.ccc || {})["10"], c10) && same((e.ccc || {})["9.5"], c95) && same((e.ccc || {})["9"], c9)));
+  $("eSave").disabled = false;
 }
 
 function renderChart() {
@@ -367,6 +440,8 @@ function renderChart() {
   sel.value = chartSel;
 
   const card = cards.find(c => c.id === chartSel);
+  $("chartTitle").textContent = card ? "Modifier et suivre le prix" : "Évolution des prix";
+  fillEdit(card && card.uid ? card : null);
   const img = $("chartImg");
   if (card && card.image && card.image.startsWith("https://assets.tcgdex.net/")) {
     img.src = card.image; img.referrerPolicy = "no-referrer"; img.hidden = false;
@@ -609,6 +684,8 @@ async function addItem(ev) {
   if (Number.isNaN(paye)) { err.textContent = "Prix payé invalide."; return; }
   const fr = num($("fFr").value);
   if (Number.isNaN(fr)) { err.textContent = "Prix français invalide."; return; }
+  const qs = $("fQ").value.trim(), qn = qs === "" ? 1 : Number(qs);
+  if (!Number.isInteger(qn) || qn < 1 || qn > 999) { err.textContent = "La quantité doit être un nombre entier (1 ou plus)."; return; }
   const ccc = {};
   for (const [k, id] of [["10", "fC10"], ["9.5", "fC95"], ["9", "fC9"]]) {
     const v = num($(id).value);
@@ -620,7 +697,8 @@ async function addItem(ev) {
   const entry = { type: "carte", uid, nom, set_api: exact ? picked.sid : set, set_affiche: set, numero, ccc };
   if (paye != null) entry.prix_paye = paye;
   if (fr != null) entry.prix_fr = fr;
-  const placeholder = { uid, type: "carte", nom, set, numero, prix_paye: paye == null ? 5.99 : paye, prix_marche: fr, prix_fr: fr,
+  if (qn > 1) entry.quantite = qn;
+  const placeholder = { uid, type: "carte", nom, set, numero, prix_paye: paye == null ? 5.99 : paye, prix_marche: fr, prix_fr: fr, quantite: qn,
                         source: fr != null ? "manuel" : undefined,
                         ccc10: ccc["10"] ?? null, ccc95: ccc["9.5"] ?? null, ccc9: ccc["9"] ?? null, pending: true };
   $("fGo").disabled = true;
@@ -705,6 +783,7 @@ $("fNom").addEventListener("input", () => {
 $("chartSel").addEventListener("change", () => { openChart($("chartSel").value, true); });
 $("btnChart").addEventListener("click", () => { if ($("chartPanel").hidden) openChart(chartSel, true); else closeChart(); });
 $("chartClose").addEventListener("click", closeChart);
+$("editForm").addEventListener("submit", saveEdit);
 $("tokenClose").addEventListener("click", () => { $("tokenPanel").hidden = true; });
 $("tokenClear").addEventListener("click", () => { setToken(""); $("tokenState").textContent = "Jeton effacé de ce navigateur."; });
 $("tokenPanel").addEventListener("submit", ev => {
