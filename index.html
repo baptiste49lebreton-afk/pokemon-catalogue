@@ -268,9 +268,10 @@ button.ic svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-
       <div class="grid" style="margin-top:8px; grid-template-columns:1fr 1fr">
         <label>Envoi aller (€) <input id="sOut" inputmode="decimal"></label>
         <label>Retour (€) <input id="sBack" inputmode="decimal"></label>
+        <label style="grid-column:1 / -1">Assurance Poste à l'aller (€) <input id="sPost" inputmode="decimal"></label>
         <label style="grid-column:1 / -1">Formule CCC <select id="sSpeed"><option value="regular">Regular (incluse)</option><option value="express">Express (+5 € par carte)</option><option value="super">Super-Express (+20 € par carte)</option></select></label>
       </div>
-      <p class="help">Les frais d'envoi sont une estimation à corriger avec tes vrais frais (un seul colis aller-retour). Assurance CCC : 2 % de la valeur déclarée (= prix actuel). On suppose que tu revends la carte gradée à la valeur estimée, avant les frais de la plateforme de vente. Tarifs CCC relevés le 20/10/2026.</p>
+      <p class="help">Les frais d'envoi sont une estimation à corriger avec tes vrais frais (un seul colis aller-retour). Assurance CCC (séjour chez CCC + retour) : 2 % de la valeur déclarée (= prix actuel). Assurance Poste (aller) : estimation à remplacer par le prix réel de l'option choisie ; mets 0 si tu n'en prends pas. On suppose que tu revends la carte gradée à la valeur estimée, avant les frais de la plateforme de vente. Tarifs CCC relevés le 20/10/2026.</p>
     </details>
   </aside>
 
@@ -437,7 +438,7 @@ function renderSim() {
   const body = $("simBody"), f = cccFee(c.prix_marche);
   if (!f) { body.replaceChildren(el("p", "help", "Prix actuel indisponible : simulation impossible pour l'instant.")); return; }
   const cols = [["CCC 10", c.ccc10], ["CCC 9.5", c.ccc95], ["CCC 9", c.ccc9]];
-  const grade = (f.fee + sp[1]) * q, ship = out + back, ins = 0.02 * c.prix_marche * q, raw = c.prix_marche * q;
+  const grade = (f.fee + sp[1]) * q, ship = out + back, post = simNum("ship_post", 6), ins = 0.02 * c.prix_marche * q, raw = c.prix_marche * q;
   const table = el("table", "simtable"), head = el("tr");
   head.append(el("th", "", ""), ...cols.map(x => el("th", "", x[0])));
   const th = el("thead"); th.append(head);
@@ -453,9 +454,10 @@ function renderSim() {
   line("Valeur estimée", q > 1 ? "× " + q + " exemplaires" : "carte gradée", v => ok(v) && { t: "≈ " + fmt(v * q) });
   line("Gradation CCC", sp[0] + " · " + fmt(f.fee + sp[1]) + (q > 1 ? " × " + q : ""), v => ok(v) && { t: "− " + fmt(grade) });
   line("Envoi", "aller " + fmt(out) + " + retour " + fmt(back), v => ok(v) && { t: "− " + fmt(ship) });
-  line("Assurance CCC", "2 % de " + fmt(raw), v => ok(v) && { t: "− " + fmt(ins) });
-  line("Il te reste au final", "", v => ok(v) && { t: fmt(v * q - grade - ship - ins) }, "tot");
-  line("Gain face à la carte non gradée", "au lieu de la vendre " + fmt(raw), v => { if (!ok(v)) return false; const g = v * q - grade - ship - ins - raw; return { t: signed(g), cls: g >= 0 ? "up" : "down" }; });
+  line("Assurance CCC", "2 % de " + fmt(raw) + " · séjour + retour", v => ok(v) && { t: "− " + fmt(ins) });
+  line("Assurance Poste", "aller · estimation", v => ok(v) && { t: "− " + fmt(post) });
+  line("Il te reste au final", "", v => ok(v) && { t: fmt(v * q - grade - ship - ins - post) }, "tot");
+  line("Gain face à la carte non gradée", "au lieu de la vendre " + fmt(raw), v => { if (!ok(v)) return false; const g = v * q - grade - ship - ins - post - raw; return { t: signed(g), cls: g >= 0 ? "up" : "down" }; });
   table.append(th, tb);
   body.replaceChildren(table);
 }
@@ -1146,6 +1148,8 @@ $("wallPick").addEventListener("click", () => $("wallFile").click());
 $("wallFile").addEventListener("change", async () => { const f = $("wallFile").files[0]; $("wallFile").value = ""; if (f) await chooseWall(f); });
 $("wallClear").addEventListener("click", () => { pref.set("wall", null); applyWall(""); $("setErr").textContent = ""; });
 $("sOut").value = String(simNum("ship_out", 8)).replace(".", ","); $("sBack").value = String(simNum("ship_back", 8)).replace(".", ",");
+$("sPost").value = String(simNum("ship_post", 6)).replace(".", ",");
+$("sPost").addEventListener("input", () => { pref.set("ship_post", $("sPost").value); renderSim(); });
 $("sSpeed").value = SPEED[pref.get("speed", "regular")] ? pref.get("speed", "regular") : "regular";
 $("sOut").addEventListener("input", () => { pref.set("ship_out", $("sOut").value); renderSim(); });
 $("sBack").addEventListener("input", () => { pref.set("ship_back", $("sBack").value); renderSim(); });
