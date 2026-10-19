@@ -45,7 +45,8 @@ button:disabled { opacity:.6; cursor:wait; }
 .grid label { display:flex; flex-direction:column; gap:4px; font-size:.8rem; color:var(--muted); }
 .row { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
 .help { color:var(--muted); font-size:.85rem; margin:8px 0 0; }
-.res { display:flex; flex-direction:column; gap:6px; margin-top:12px; max-height:340px; overflow-y:auto; }
+.one { display:flex; flex-direction:column; gap:4px; font-size:.8rem; color:var(--muted); }
+.res { display:flex; flex-direction:column; gap:6px; margin-top:8px; max-height:340px; overflow-y:auto; }
 .res button { display:flex; gap:12px; align-items:center; text-align:left; font-weight:500; }
 .res img { width:44px; height:auto; border-radius:4px; flex:none; }
 .chartpanel select { max-width:100%; }
@@ -85,8 +86,10 @@ td.nm { cursor:pointer; }
 
   <form class="panel" id="addPanel" hidden autocomplete="off">
     <h2>Ajouter</h2>
-    <div class="grid">
-      <label>Nom <input id="fNom" required maxlength="120" placeholder="ex. Dracaufeu ex"></label>
+    <label class="one">Nom de la carte <input id="fNom" required maxlength="120" placeholder="ex. Zekrom ex BWR"></label>
+    <p class="help" id="heard" role="status"></p>
+    <div class="res" id="results"></div>
+    <div class="grid" style="margin-top:12px">
       <label>Extension <input id="fSet" maxlength="120" placeholder="ex. 151 ou Foudre Noire"></label>
       <label>Numéro <input id="fNum" maxlength="20" inputmode="text" placeholder="ex. 199"></label>
       <label>Prix payé (€) <input id="fPaye" inputmode="decimal" placeholder="vide = 5,99"></label>
@@ -94,15 +97,13 @@ td.nm { cursor:pointer; }
       <label>CCC 9.5 (€) <input id="fC95" inputmode="decimal"></label>
       <label>CCC 9 (€) <input id="fC9" inputmode="decimal"></label>
     </div>
-    <p class="help">Écris ou dis juste le nom (ex. « Zekrom ex BWR », avec le numéro si tu veux), puis touche « Chercher la carte » : l'extension et le numéro se remplissent tout seuls, ou tu choisis dans la liste s'il y a plusieurs cartes. Le prix du marché est ensuite mis à jour chaque matin.</p>
+    <p class="help">Écris ou dis juste le nom (ex. « Zekrom » ou « Zekrom ex BWR », avec le numéro si tu veux) : la liste des cartes avec leurs images apparaît en dessous, fais-la défiler et touche la tienne. L'extension et le numéro se remplissent tout seuls. Le prix du marché est ensuite mis à jour chaque matin.</p>
     <div class="row">
       <button type="button" id="fSearch">🔍 Chercher la carte</button>
       <button type="submit" id="fGo">Enregistrer</button>
       <button type="button" class="ghost" id="fMic" hidden>🎤 Dicter</button>
       <button type="button" class="ghost" id="fCancel">Annuler</button>
     </div>
-    <p class="help" id="heard" role="status"></p>
-    <div class="res" id="results"></div>
     <p class="help" id="micNote" hidden>Dictée : dis par exemple « Zekrom ex BWR » ou « Dracaufeu ex numéro 199 » (la recherche se lance toute seule), ou « Ajoute Dracaufeu ex, extension 151, numéro 199, payé 5,99 euros ». Ton navigateur envoie la voix à son service de reconnaissance (Google pour Chrome). La recherche de carte interroge le site public TCGdex. Rien n'est enregistré sans ton clic sur « Enregistrer ».</p>
     <p class="err" id="fErr" role="alert"></p>
   </form>
@@ -436,7 +437,7 @@ function applyDictation(text) {
   if (r.set) $("fSet").value = capFirst(r.set);
   if (r.numero) $("fNum").value = r.numero;
   if (r.paye != null) $("fPaye").value = String(r.paye).replace(".", ",");
-  if (r.nom && !r.set) searchCard();
+  if (r.nom && !r.set) searchCard(true);
 }
 function dictate() {
   if (!SR) return;
@@ -488,17 +489,19 @@ function pickCard(c, sid, s) {
   $("heard").textContent = "Carte trouvée : " + c.name + " (" + $("fSet").value + ", n° " + c.localId + "). Prix payé vide = 5,99 €. Clique sur « Enregistrer ».";
   $("fPaye").focus();
 }
-async function searchCard() {
-  const box = $("results"), msg = $("heard");
-  box.replaceChildren(); picked = null;
+let searchId = 0, typingTimer = null;
+async function searchCard(auto) {
+  const box = $("results"), msg = $("heard"), my = ++searchId;
+  box.replaceChildren(); box.onscroll = null; picked = null;
   const q = parseQuery($("fNom").value, $("fSet").value.trim() ? "" : $("fNum").value);
-  if (q.terms.length < 2) { msg.textContent = "Écris ou dis d'abord le nom de la carte."; return; }
+  if (q.terms.length < 2) { msg.textContent = auto ? "Écris ou dis d'abord le nom de la carte." : ""; return; }
   msg.textContent = "Recherche…";
   try {
     const first = q.terms.split(" ")[0];
     const names = [...new Set([first, q.terms, q.terms.replace(/ (ex|gx|v|vmax|vstar)(?= |$)/, "-$1")])];
     const [sets, ...lists] = await Promise.all([loadSets(),
       ...names.map(n => fetch(TCG + "/cards?name=" + encodeURIComponent(n)).then(r => { if (!r.ok) throw new Error("tcgdex"); return r.json(); }))]);
+    if (my !== searchId) return;
     const seen = new Set();
     const all = lists.flat().filter(c => c && c.id && !seen.has(c.id) && seen.add(c.id)).map(c => {
       const sid = String(c.id).slice(0, String(c.id).length - String(c.localId).length - 1);
@@ -516,24 +519,28 @@ async function searchCard() {
     if (q.bwr) {
       const cand = found.filter(x => BWR_SETS.includes(x.sid)).slice(0, 40);
       const det = await Promise.all(cand.map(x => fetch(TCG + "/cards/" + encodeURIComponent(x.c.id)).then(r => r.ok ? r.json() : null).catch(() => null)));
+      if (my !== searchId) return;
       const bw = cand.filter((x, i) => det[i] && /noir.*blanc/i.test(String(det[i].rarity || "")));
       if (bw.length) found = bw; else note = " (aucune « Rare Noir Blanc » trouvée, voici toutes les cartes de ce nom)";
     }
     found.sort((a, b) => (b.s ? b.s.rank : -1) - (a.s ? a.s.rank : -1));
     if (!found.length) { msg.textContent = "Aucune carte trouvée pour « " + $("fNom").value.trim() + " ». Remplis l'extension et le numéro à la main."; return; }
-    if (found.length === 1) { pickCard(found[0].c, found[0].sid, found[0].s); return; }
-    found = found.slice(0, 30);
-    msg.textContent = found.length + " cartes possibles" + note + " : touche la tienne (les plus récentes en premier).";
-    found.forEach(({ c, sid, s }) => {
+    if (found.length === 1 && auto) { pickCard(found[0].c, found[0].sid, found[0].s); return; }
+    msg.textContent = found.length + " carte" + (found.length > 1 ? "s" : "") + note + " : fais défiler la liste (les plus récentes en premier) et touche la tienne.";
+    let shown = 0;
+    const addItem = ({ c, sid, s }) => {
       const b = el("button", "ghost"); b.type = "button";
       if (c.image && String(c.image).startsWith("https://assets.tcgdex.net/")) {
-        const im = el("img"); im.src = c.image + "/low.webp"; im.alt = ""; im.referrerPolicy = "no-referrer"; b.append(im);
+        const im = el("img"); im.src = c.image + "/low.webp"; im.alt = ""; im.loading = "lazy"; im.referrerPolicy = "no-referrer"; b.append(im);
       }
       b.append(el("span", "", c.name + " · " + (s ? s.name : sid) + " · n° " + c.localId));
       b.addEventListener("click", () => pickCard(c, sid, s));
       box.append(b);
-    });
-  } catch (e) { msg.textContent = "Recherche impossible pour le moment. Remplis l'extension et le numéro à la main."; }
+    };
+    const more = () => { found.slice(shown, shown + 20).forEach(addItem); shown = Math.min(found.length, shown + 20); };
+    more();
+    box.onscroll = () => { if (shown < found.length && box.scrollTop + box.clientHeight >= box.scrollHeight - 120) more(); };
+  } catch (e) { if (my === searchId) msg.textContent = "Recherche impossible pour le moment. Remplis l'extension et le numéro à la main."; }
 }
 
 // ---------- actions ----------
@@ -619,8 +626,12 @@ $("login").addEventListener("submit", async ev => {
 $("btnAdd").addEventListener("click", () => { $("addPanel").hidden = !$("addPanel").hidden; if (!$("addPanel").hidden) $("fNom").focus(); });
 $("fCancel").addEventListener("click", () => { $("addPanel").hidden = true; });
 $("addPanel").addEventListener("submit", addItem);
-$("fSearch").addEventListener("click", searchCard);
-$("fNom").addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); searchCard(); } });
+$("fSearch").addEventListener("click", () => searchCard(true));
+$("fNom").addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); searchCard(true); } });
+$("fNom").addEventListener("input", () => {
+  if (picked) { picked = null; $("fSet").value = ""; $("fNum").value = ""; }
+  clearTimeout(typingTimer); typingTimer = setTimeout(() => { if (!$("fSet").value.trim()) searchCard(false); }, 450);
+});
 ["fSet", "fNum"].forEach(id => $(id).addEventListener("input", () => { picked = null; }));
 $("btnRefresh").addEventListener("click", refresh);
 $("chartSel").addEventListener("change", () => { chartSel = $("chartSel").value; draw(); });
