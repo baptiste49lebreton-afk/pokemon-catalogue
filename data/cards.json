@@ -1,4 +1,29 @@
 {
-  "updated": null,
-  "cards": []
+  "updated": "2026-10-19",
+  "cards": [
+    {
+      "id": "sv10.5b-172",
+      "nom": "Zekrom ex BWR",
+      "set": "Écarlate et Violet, Foudre Noire",
+      "numero": "172",
+      "image": "https://assets.tcgdex.net/en/sv/sv10.5b/172/low.webp",
+      "prix_paye": 240,
+      "prix_marche": 629.1,
+      "ccc10": 700,
+      "ccc95": 450,
+      "ccc9": 300
+    },
+    {
+      "id": "sv03.5-199",
+      "nom": "Dracaufeu ex alternatif",
+      "set": "151",
+      "numero": "199",
+      "image": "https://assets.tcgdex.net/en/sv/sv03.5/199/low.webp",
+      "prix_paye": 5.99,
+      "prix_marche": 327.72,
+      "ccc10": 800,
+      "ccc95": 500,
+      "ccc9": 350
+    }
+  ]
 }
