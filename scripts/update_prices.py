@@ -41,6 +41,9 @@ API = "https://api.tcgdex.net/v2"
 PRIX_BOOSTER = 5.99
 ITERATIONS = 600_000
 FR_AUTO_JOURS = 14
+# Estimation du prix d'une carte gradée CCC : multiple du prix actuel (aucune source gratuite de ventes CCC).
+# Une valeur saisie à la main n'est jamais remplacée.
+CCC_COEF = {"10": 1.8, "9.5": 1.4, "9": 1.15}
 
 
 # ---------- chiffrement ----------
@@ -368,6 +371,16 @@ def main():
             price_cm = old.get("prix_cm", old.get("prix_marche"))
             if not override:
                 price, source = old.get("prix_marche"), old.get("source", "cm")
+        ccc_manual = entry.get("ccc") or {}
+        ccc_vals, ccc_auto = {}, []
+        for k, coef in CCC_COEF.items():
+            if ccc_manual.get(k) is not None:
+                ccc_vals[k] = ccc_manual[k]
+            elif price is not None:
+                ccc_vals[k] = round(price * coef, 2)
+                ccc_auto.append(k)
+            else:
+                ccc_vals[k] = None
         cards.append({
             "id": cid,
             "uid": entry["uid"],
@@ -385,9 +398,10 @@ def main():
             "prix_fr": manual,
             "fr_n": fr_n,
             "fr_min": fr_min,
-            "ccc10": entry.get("ccc", {}).get("10"),
-            "ccc95": entry.get("ccc", {}).get("9.5"),
-            "ccc9": entry.get("ccc", {}).get("9"),
+            "ccc10": ccc_vals["10"],
+            "ccc95": ccc_vals["9.5"],
+            "ccc9": ccc_vals["9"],
+            "ccc_auto": ccc_auto,
         })
         if price is not None and (not failed or override):
             history.setdefault(cid, {})[today] = price
