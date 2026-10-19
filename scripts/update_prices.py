@@ -172,6 +172,9 @@ def clean_entry(raw):
     fr = _num(raw.get("prix_fr"))
     if fr is not None:
         e["prix_fr"] = fr
+    q = _num(raw.get("quantite"))
+    if q is not None and 1 <= q <= 999:
+        e["quantite"] = int(q)
     if kind == "scelle":
         manuel = _num(raw.get("prix_marche_manuel"))
         if manuel is not None:
@@ -216,6 +219,39 @@ def apply_payload(vault, password):
         before = len(vault["watchlist"])
         vault["watchlist"] = [e for e in vault["watchlist"] if ensure_uid(e)["uid"] != uid]
         print("Élément supprimé." if len(vault["watchlist"]) < before else "Suppression : élément introuvable.")
+    elif action == "update_entry":
+        uid = str(msg.get("uid") or "")
+        f = msg.get("fields") if isinstance(msg.get("fields"), dict) else {}
+        for e in vault["watchlist"]:
+            if ensure_uid(e)["uid"] != uid:
+                continue
+
+            def put(key, value):
+                if value is None:
+                    e.pop(key, None)
+                else:
+                    e[key] = value
+            if "prix_paye" in f:
+                put("prix_paye", _num(f.get("prix_paye")))
+            if "prix_fr" in f:
+                put("prix_fr", _num(f.get("prix_fr")))
+            if "quantite" in f:
+                q = _num(f.get("quantite"))
+                put("quantite", int(q) if q is not None and 1 <= q <= 999 else None)
+            if isinstance(f.get("ccc"), dict):
+                ccc = dict(e.get("ccc") or {})
+                for k in ("10", "9.5", "9"):
+                    if k in f["ccc"]:
+                        v = _num(f["ccc"].get(k))
+                        if v is None:
+                            ccc.pop(k, None)
+                        else:
+                            ccc[k] = v
+                e["ccc"] = ccc
+            print("Carte modifiée.")
+            break
+        else:
+            print("Modification : élément introuvable.")
     elif action == "set_prix_fr":
         uid = str(msg.get("uid") or "")
         val = _num(msg.get("prix_fr"))
@@ -341,6 +377,7 @@ def main():
             "numero": entry["numero"],
             "image": image,
             "prix_paye": entry.get("prix_paye", PRIX_BOOSTER),
+            "quantite": entry.get("quantite", 1),
             "prix_marche": price,
             "prix_cm": price_cm,
             "cm_id": cm_id,
