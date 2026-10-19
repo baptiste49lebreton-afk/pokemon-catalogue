@@ -4,9 +4,18 @@ on:
   schedule:
     - cron: "0 6 * * *"
   workflow_dispatch:
+    inputs:
+      payload:
+        description: "Message chiffré envoyé par le site (ne pas remplir à la main)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
+
+concurrency:
+  group: coffre
+  cancel-in-progress: false
 
 jobs:
   update:
@@ -18,6 +27,7 @@ jobs:
       - name: Récupérer cartes et prix (coffre chiffré)
         env:
           SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
+          PAYLOAD: ${{ inputs.payload }}
         run: python3 scripts/update_prices.py
       - name: Enregistrer les changements
         run: |
