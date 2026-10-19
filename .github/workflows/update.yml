@@ -13,14 +13,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Récupérer cartes et prix
+      - name: Installer la bibliothèque de chiffrement
+        run: pip install --quiet cryptography
+      - name: Récupérer cartes et prix (coffre chiffré)
         env:
-          POKEMON_TCG_API_KEY: ${{ secrets.POKEMON_TCG_API_KEY }}
+          SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
         run: python3 scripts/update_prices.py
       - name: Enregistrer les changements
         run: |
           git config user.name "catalogue-bot"
           git config user.email "bot@users.noreply.github.com"
+          git rm -q --ignore-unmatch data/watchlist.json data/cards.json data/history.json
           git add data/
-          git diff --cached --quiet || git commit -m "Mise à jour des prix"
+          git diff --cached --quiet || git commit -m "Mise à jour du coffre"
           git push
