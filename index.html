@@ -3,20 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Collection Pokémon</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<meta name="robots" content="noindex, nofollow, noarchive, noimageindex">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https://assets.tcgdex.net; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Collection</title>
 <style>
-:root { --bg:#f4f3ef; --fg:#16181d; --muted:#6c717c; --line:#d9d7d0; --accent:#b88700; --up:#1f7a4d; --down:#b3261e; color-scheme: light; }
+:root { --bg:#f4f3ef; --fg:#16181d; --muted:#6c717c; --line:#d9d7d0; --accent:#b88700; --up:#1f7a4d; --down:#b3261e; --field:#fff; color-scheme: light; }
 @media (prefers-color-scheme: dark) {
-  :root { --bg:#0f1115; --fg:#eceef2; --muted:#8a909c; --line:#2a2e37; --accent:#ffd23f; --up:#5fd39a; --down:#ff8a80; color-scheme: dark; }
+  :root { --bg:#0f1115; --fg:#eceef2; --muted:#8a909c; --line:#2a2e37; --accent:#ffd23f; --up:#5fd39a; --down:#ff8a80; --field:#181b21; color-scheme: dark; }
 }
-body { margin:0; background:var(--bg); color:var(--fg); font:400 15px/1.5 "IBM Plex Sans", system-ui, sans-serif;
+body { margin:0; background:var(--bg); color:var(--fg); font:400 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   padding: 24px max(16px, env(safe-area-inset-right,0px)) 48px max(16px, env(safe-area-inset-left,0px)); }
 header, .wrap { max-width:1040px; margin:0 auto; }
-h1 { font:800 2rem/1.1 "Bricolage Grotesque", system-ui, sans-serif; margin:0 0 14px; }
+h1 { font:800 2rem/1.1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; margin:0 0 14px; }
 .totals { display:flex; flex-wrap:wrap; gap:12px 28px; margin-bottom:24px; }
 .label { color:var(--muted); font-size:.8rem; text-transform:uppercase; letter-spacing:.06em; }
-.value { font:600 1.5rem/1.2 "Bricolage Grotesque", system-ui, sans-serif; font-variant-numeric:tabular-nums; }
+.value { font:600 1.5rem/1.2 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-variant-numeric:tabular-nums; }
 .hi .value { color:var(--accent); }
 .wrap { overflow-x:auto; min-width:0; }
 table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
@@ -28,59 +30,121 @@ td.img img { width:56px; height:auto; border-radius:4px; display:block; }
 .meta { color:var(--muted); font-size:.85rem; }
 .up { color:var(--up); } .down { color:var(--down); }
 .status { color:var(--muted); padding:32px 0; text-align:center; }
+.login { max-width:340px; margin:12vh auto 0; display:flex; flex-direction:column; gap:12px; }
+.login input { font:inherit; padding:12px 14px; border:1px solid var(--line); border-radius:8px; background:var(--field); color:var(--fg); }
+.login button { font:600 1rem system-ui, sans-serif; padding:12px 14px; border:0; border-radius:8px; background:var(--accent); color:#111; cursor:pointer; }
+.login button:disabled { opacity:.6; cursor:wait; }
+.err { color:var(--down); min-height:1.4em; margin:0; }
+[hidden] { display:none !important; }
 </style>
 </head>
 <body>
-<header>
-  <h1>Collection Pokémon</h1>
-  <div class="totals" id="totals"></div>
-</header>
-<div class="wrap" id="list"><p class="status">Chargement…</p></div>
+<form class="login" id="login" autocomplete="off">
+  <h1>Collection</h1>
+  <input type="password" id="pw" placeholder="Mot de passe" autocomplete="current-password" required>
+  <button type="submit" id="go">Déverrouiller</button>
+  <p class="err" id="err" role="alert"></p>
+</form>
+
+<main id="app" hidden>
+  <header>
+    <h1>Collection Pokémon</h1>
+    <div class="totals" id="totals"></div>
+  </header>
+  <div class="wrap" id="list"></div>
+</main>
 
 <script>
 const fmt = v => (v == null || isNaN(v)) ? "—" : v.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
 const signed = v => (v == null || isNaN(v)) ? "—" : (v > 0 ? "+" : "") + fmt(v);
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const $ = id => document.getElementById(id);
 
-fetch("data/cards.json").then(r => r.json()).then(({ updated, cards }) => {
+async function decryptVault(blob, password) {
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt: b64(blob.salt), iterations: blob.iter, hash: "SHA-256" },
+    base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(blob.iv) }, key, b64(blob.data));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function render({ updated, cards }) {
   let now = 0, paid = 0, nowCount = 0;
-  const rows = cards.map(c => {
+  const table = el("table");
+  const head = el("tr");
+  [["", ""], ["Carte", ""], ["Payé", "r"], ["Marché", "r"], ["Écart", "r"],
+   ["CCC 10 (est.)", "r"], ["CCC 9.5 (est.)", "r"], ["CCC 9 (est.)", "r"]]
+    .forEach(([t, c]) => head.append(el("th", c, t)));
+  const thead = el("thead"); thead.append(head);
+  const tbody = el("tbody");
+  table.append(thead, tbody);
+
+  cards.forEach(c => {
     const gain = c.prix_marche != null ? c.prix_marche - c.prix_paye : null;
     if (c.prix_marche != null) { now += c.prix_marche; nowCount++; }
     paid += c.prix_paye;
-    const cls = gain == null ? "" : (gain >= 0 ? "up" : "down");
-    return `<tr>
-      <td class="img">${c.image ? `<img src="${c.image}" alt="">` : ""}</td>
-      <td><div class="name"></div><div class="meta"></div></td>
-      <td class="r">${fmt(c.prix_paye)}</td>
-      <td class="r">${fmt(c.prix_marche)}</td>
-      <td class="r ${cls}">${signed(gain)}</td>
-      <td class="r">${fmt(c.ccc10)}</td>
-      <td class="r">${fmt(c.ccc95)}</td>
-      <td class="r">${fmt(c.ccc9)}</td>
-    </tr>`;
+    const tr = el("tr");
+    const imgCell = el("td", "img");
+    if (c.image && c.image.startsWith("https://assets.tcgdex.net/")) {
+      const img = el("img"); img.src = c.image; img.alt = ""; img.referrerPolicy = "no-referrer";
+      imgCell.append(img);
+    }
+    const info = el("td");
+    info.append(el("div", "name", c.nom), el("div", "meta", [c.set, c.numero].filter(Boolean).join(" · ")));
+    tr.append(imgCell, info,
+      el("td", "r", fmt(c.prix_paye)), el("td", "r", fmt(c.prix_marche)),
+      el("td", "r " + (gain == null ? "" : gain >= 0 ? "up" : "down"), signed(gain)),
+      el("td", "r", fmt(c.ccc10)), el("td", "r", fmt(c.ccc95)), el("td", "r", fmt(c.ccc9)));
+    tbody.append(tr);
   });
-  const table = `<table><thead><tr>
-    <th></th><th>Carte</th><th class="r">Payé</th><th class="r">Marché</th><th class="r">Écart</th>
-    <th class="r">CCC 10 (est.)</th><th class="r">CCC 9.5 (est.)</th><th class="r">CCC 9 (est.)</th>
-  </tr></thead><tbody></tbody></table>`;
-  const list = document.getElementById("list");
-  list.innerHTML = table;
-  const tbody = list.querySelector("tbody");
-  cards.forEach((c, i) => {
-    tbody.insertAdjacentHTML("beforeend", rows[i]);
-    const tr = tbody.lastElementChild;
-    tr.querySelector(".name").textContent = c.nom;
-    tr.querySelector(".meta").textContent = [c.set, c.numero].filter(Boolean).join(" · ");
-  });
+
+  const list = $("list"); list.replaceChildren(table);
+  const tile = (label, value, cls, small) => {
+    const d = el("div", cls); d.append(el("div", "label", label));
+    const v = el("div", "value", value); if (small) v.style.fontSize = "1rem";
+    d.append(v); return d;
+  };
   const gain = nowCount ? now - paid : null;
-  document.getElementById("totals").innerHTML = `
-    <div class="hi"><div class="label">Valeur actuelle</div><div class="value">${nowCount ? fmt(now) : "—"}</div></div>
-    <div><div class="label">Payé</div><div class="value">${fmt(paid)}</div></div>
-    <div><div class="label">Écart</div><div class="value">${signed(gain)}</div></div>
-    <div><div class="label">Mis à jour</div><div class="value" style="font-size:1rem">${updated || "—"}</div></div>`;
-}).catch(() => {
-  document.getElementById("list").innerHTML = '<p class="status">Impossible de charger les cartes.</p>';
+  $("totals").replaceChildren(
+    tile("Valeur actuelle", nowCount ? fmt(now) : "—", "hi"),
+    tile("Payé", fmt(paid)), tile("Écart", signed(gain)),
+    tile("Mis à jour", updated || "—", "", true));
+}
+
+async function unlock(password) {
+  const blob = await fetch("data/vault.json", { cache: "no-store" }).then(r => { if (!r.ok) throw new Error("vault"); return r.json(); });
+  let vault;
+  try { vault = await decryptVault(blob, password); } catch (e) { throw new Error("password"); }
+  render(vault.cards);
+  $("login").hidden = true; $("app").hidden = false;
+}
+
+$("login").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const btn = $("go"), err = $("err"), pw = $("pw").value;
+  btn.disabled = true; err.textContent = "";
+  try {
+    await unlock(pw);
+    try { sessionStorage.setItem("k", pw); } catch (e) {}
+  } catch (e) {
+    err.textContent = e.message === "password" ? "Mot de passe incorrect." : "Données indisponibles pour le moment.";
+  } finally {
+    btn.disabled = false; $("pw").value = "";
+  }
 });
+
+try {
+  const saved = sessionStorage.getItem("k");
+  if (saved) unlock(saved).catch(() => { try { sessionStorage.removeItem("k"); } catch (e) {} });
+} catch (e) {}
 </script>
 </body>
 </html>
