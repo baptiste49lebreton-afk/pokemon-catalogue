@@ -5,21 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow, noarchive, noimageindex">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https://assets.tcgdex.net; connect-src 'self' https://api.github.com https://api.tcgdex.net; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https://assets.tcgdex.net data:; connect-src 'self' https://api.github.com https://api.tcgdex.net; base-uri 'none'; form-action 'none'">
 <title>Collection</title>
 <style>
 :root { --bg:#f4f3ef; --fg:#16181d; --muted:#6c717c; --line:#d9d7d0; --accent:#b88700; --up:#1f7a4d; --down:#b3261e; --field:#fff; --panel:#ebe9e2; color-scheme: light; }
 @media (prefers-color-scheme: dark) {
-  :root { --bg:#0f1115; --fg:#eceef2; --muted:#8a909c; --line:#2a2e37; --accent:#ffd23f; --up:#5fd39a; --down:#ff8a80; --field:#181b21; --panel:#161920; color-scheme: dark; }
+  :root:not([data-theme]) { --bg:#0f1115; --fg:#eceef2; --muted:#8a909c; --line:#2a2e37; --accent:#ffd23f; --up:#5fd39a; --down:#ff8a80; --field:#181b21; --panel:#161920; color-scheme: dark; }
 }
+:root[data-theme="dark"] { --bg:#0f1115; --fg:#eceef2; --muted:#8a909c; --line:#2a2e37; --accent:#ffd23f; --up:#5fd39a; --down:#ff8a80; --field:#181b21; --panel:#161920; color-scheme: dark; }
 body { margin:0; background:var(--bg); color:var(--fg); font:400 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   padding: 24px max(16px, env(safe-area-inset-right,0px)) 48px max(16px, env(safe-area-inset-left,0px)); }
 header, .wrap, .panel { max-width:1040px; margin:0 auto; }
 h1 { font:800 2rem/1.1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; margin:0 0 14px; }
-.totals { display:flex; flex-wrap:wrap; gap:12px 28px; margin-bottom:20px; }
 .label { color:var(--muted); font-size:.8rem; text-transform:uppercase; letter-spacing:.06em; }
 .value { font:600 1.5rem/1.2 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-variant-numeric:tabular-nums; }
-.hi .value { color:var(--accent); }
 .wrap { overflow-x:auto; min-width:0; }
 table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
 th, td { padding:10px 12px; border-bottom:1px solid var(--line); text-align:left; vertical-align:middle; }
@@ -58,7 +57,7 @@ button:disabled { opacity:.6; cursor:wait; }
 .chartpanel select { max-width:100%; padding:4px 8px; }
 .chartwrap { display:flex; gap:12px; align-items:flex-start; }
 .chartwrap img { width:44px; height:auto; border-radius:6px; flex:none; }
-.plot { position:relative; flex:1; min-width:0; max-width:420px; }
+.plot { position:relative; flex:1; min-width:0; max-width:880px; }
 .plot svg { width:100%; height:auto; display:block; touch-action:pan-y; }
 .tip { position:absolute; pointer-events:none; background:var(--field); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:4px 8px; font-size:.85rem; white-space:nowrap; transform:translate(-50%,-125%); }
 .sum { margin:6px 0 0; font-size:.8rem; color:var(--muted); }
@@ -74,9 +73,58 @@ tbody tr.clk:hover td { background:var(--panel); }
 @keyframes pop { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:none; } }
 .draw polyline { stroke-dasharray:1; stroke-dashoffset:1; animation:drawline 1.2s ease-out .15s forwards; }
 .draw circle { opacity:0; animation:fadein .4s ease-out 1.1s forwards; }
+.draw polygon { opacity:0; animation:fadein .6s ease-out .9s forwards; }
 @keyframes drawline { to { stroke-dashoffset:0; } }
 @keyframes fadein { to { opacity:1; } }
-@media (prefers-reduced-motion: reduce) { .pop, .draw polyline, .draw circle { animation:none; } .draw polyline { stroke-dashoffset:0; } .draw circle { opacity:1; } }
+@media (prefers-reduced-motion: reduce) { .pop, .draw polyline, .draw circle, .draw polygon { animation:none; } .draw polyline { stroke-dashoffset:0; } .draw circle, .draw polygon { opacity:1; } }
+/* ---- nouveau look ---- */
+#wall { position:fixed; inset:0; z-index:-1; display:none; background-size:cover; background-position:center; }
+#wall::after { content:""; position:absolute; inset:0; background:var(--bg); opacity:var(--veil, .55); }
+.has-wall #wall { display:block; }
+.has-wall .panel, .has-wall .tile { background:color-mix(in srgb, var(--panel) 78%, transparent); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); }
+.has-wall .wrap.list { background:color-mix(in srgb, var(--bg) 72%, transparent); border-radius:12px; -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); }
+.top { display:flex; align-items:center; gap:8px; margin-bottom:14px; }
+.top h1 { margin:0 auto 0 0; }
+button.ic { padding:8px 10px; line-height:0; }
+button.ic svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.tiles { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:8px; }
+.tile { flex:1 1 230px; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px 16px; }
+.tile.small { flex:0 1 170px; }
+.tile .value { font-size:1.75rem; }
+.tile.small .value { font-size:1.25rem; }
+.tile .sub { color:var(--muted); font-size:.85rem; margin-top:2px; }
+.pill { display:inline-block; padding:2px 10px; border-radius:999px; font-size:.82rem; font-weight:600; font-variant-numeric:tabular-nums; background:color-mix(in srgb, currentColor 14%, transparent); }
+.updated { color:var(--muted); font-size:.8rem; margin:0 0 12px; }
+.seg { display:inline-flex; border:1px solid var(--line); border-radius:999px; overflow:hidden; }
+.seg button { background:transparent; color:var(--muted); border-radius:0; padding:6px 13px; font-weight:500; font-size:.9rem; }
+.seg button.on { background:var(--accent); color:#111; font-weight:700; }
+.bar .seg { margin-left:auto; }
+.chartbar { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px 14px; margin:6px 0 10px; }
+.delta { display:flex; align-items:center; gap:4px 10px; flex-wrap:wrap; }
+.delta strong { font-size:1.15rem; font-variant-numeric:tabular-nums; }
+.legend { display:flex; flex-wrap:wrap; gap:4px 16px; font-size:.8rem; color:var(--muted); margin:8px 0 0; }
+.legend i { display:inline-block; width:20px; height:0; border-top:2px solid var(--accent); vertical-align:middle; margin-right:6px; }
+.legend i.dot { border-top:2px dotted var(--muted); }
+.setrow { display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; margin-top:12px; }
+.setrow > .label { min-width:110px; }
+.setrow input[type=range] { padding:0; }
+.cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(165px, 1fr)); gap:18px 16px; padding:4px 2px 8px; }
+.gcard { position:relative; display:flex; flex-direction:column; gap:2px; border-radius:12px; padding:8px; border:1px solid transparent; outline:none; transition:transform .15s, background .15s; }
+.gcard.clk { cursor:pointer; }
+.gcard:hover, .gcard:focus-visible { transform:translateY(-3px); background:var(--panel); }
+.gcard.sel { border-color:var(--accent); background:var(--panel); }
+.gcard.pending { opacity:.55; }
+.gpic { position:relative; aspect-ratio:245/337; border-radius:8px; overflow:hidden; background:var(--panel); display:flex; align-items:center; justify-content:center; margin-bottom:6px; box-shadow:0 4px 14px rgba(0,0,0,.25); }
+.gpic img { width:100%; height:100%; object-fit:cover; display:block; }
+.qty { position:absolute; left:6px; top:6px; background:var(--accent); color:#111; font-weight:700; font-size:.8rem; padding:1px 8px; border-radius:999px; }
+.gdel { position:absolute; top:6px; right:6px; background:rgba(0,0,0,.6); color:#fff; border-radius:999px; padding:1px 8px; font-size:.9rem; opacity:0; transition:opacity .15s; }
+.gcard:hover .gdel, .gdel:focus-visible { opacity:1; }
+@media (hover: none) { .gdel { opacity:1; } }
+.gname { font-weight:600; font-size:.92rem; line-height:1.25; }
+.gprice { font:700 1.2rem/1.25 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-variant-numeric:tabular-nums; }
+.ggain { font-size:.85rem; font-variant-numeric:tabular-nums; }
+.hide-money .money, .hide-money .plot svg, .hide-money #chartSum, .hide-money #chartTable { filter:blur(7px); user-select:none; }
+.hide-money .tip { display:none; }
 [hidden] { display:none !important; }
 </style>
 </head>
@@ -88,17 +136,37 @@ tbody tr.clk:hover td { background:var(--panel); }
   <p class="err" id="err" role="alert"></p>
 </form>
 
+<div id="wall"></div>
 <main id="app" hidden>
   <header>
-    <h1>Collection Pokémon</h1>
-    <div class="totals" id="totals"></div>
+    <div class="top">
+      <h1>Collection Pokémon</h1>
+      <button type="button" class="ghost ic" id="btnEye" aria-pressed="false" title="Cacher les montants" aria-label="Cacher ou afficher les montants"></button>
+      <button type="button" class="ghost ic" id="btnSet" title="Réglages (thème, fond d'écran)" aria-label="Réglages"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h8M18 6h2M4 12h2M12 12h8M4 18h10M20 18h0"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg></button>
+    </div>
+    <div class="tiles" id="totals"></div>
+    <p class="updated" id="updated"></p>
     <div class="bar">
       <button type="button" id="btnAdd">+ Ajouter</button>
       <button type="button" class="ghost" id="btnChart">📈 Évolution</button>
       <button type="button" class="ghost" id="btnMic" hidden>🎤 Dicter</button>
+      <div class="seg" id="viewSeg" role="group" aria-label="Affichage des cartes"><button type="button" data-v="grid">▦ Grille</button><button type="button" data-v="list">☰ Liste</button></div>
     </div>
     <p class="status" id="status" role="status"></p>
   </header>
+
+  <section class="panel" id="setPanel" hidden>
+    <div class="charthead"><h2>Réglages</h2><button type="button" class="ghost" id="setClose">Fermer</button></div>
+    <div class="setrow"><span class="label">Thème</span>
+      <div class="seg" id="themeSeg" role="group" aria-label="Thème"><button type="button" data-t="auto">Auto</button><button type="button" data-t="light">Clair</button><button type="button" data-t="dark">Sombre</button></div></div>
+    <div class="setrow"><span class="label">Fond d'écran</span>
+      <button type="button" id="wallPick">Choisir une image…</button><button type="button" class="ghost" id="wallClear">Retirer</button>
+      <input type="file" id="wallFile" accept="image/*" hidden></div>
+    <div class="setrow" id="veilRow"><span class="label">Voile</span><input type="range" id="veil" min="0" max="90" value="55" aria-label="Intensité du voile sur l'image"><span class="meta">pour que le texte reste lisible</span></div>
+    <p class="help">L'image reste uniquement dans ce navigateur : elle n'est ni envoyée, ni enregistrée sur GitHub. Il faut la choisir de nouveau sur chaque appareil. Le thème et l'affichage (grille/liste, montants cachés) sont aussi retenus ici.</p>
+    <div class="row"><button type="button" class="ghost" id="setToken">Clé d'accès GitHub…</button></div>
+    <p class="err" id="setErr" role="alert"></p>
+  </section>
 
   <form class="panel" id="addPanel" hidden autocomplete="off">
     <h2>Ajouter</h2>
@@ -149,13 +217,19 @@ tbody tr.clk:hover td { background:var(--panel); }
         <label>CCC 9.5 (€) <input id="eC95" inputmode="decimal"></label>
         <label>CCC 9 (€) <input id="eC9" inputmode="decimal"></label>
       </div>
-      <div class="row"><button type="submit" id="eSave">Enregistrer les modifications</button><span class="err" id="eErr" role="alert"></span></div>
+      <div class="row"><button type="submit" id="eSave">Enregistrer les modifications</button><a id="eLink" class="meta" target="_blank" rel="noopener noreferrer" hidden style="text-decoration:underline">offres en français ↗</a><span class="err" id="eErr" role="alert"></span></div>
     </form>
+    <div class="chartbar">
+      <div class="delta" id="chartDelta"></div>
+      <div class="seg" id="ranges" role="group" aria-label="Période"><button type="button" data-r="30">30 j</button><button type="button" data-r="90">3 mois</button><button type="button" data-r="365">1 an</button><button type="button" data-r="all">Tout</button></div>
+    </div>
     <div class="chartwrap">
       <img id="chartImg" alt="" hidden>
       <div class="plot" id="plot"></div>
     </div>
+    <div class="legend" id="chartLegend"></div>
     <p class="sum" id="chartSum"></p>
+    <p class="sum" id="chartNote"></p>
     <details class="tv"><summary>Voir en tableau</summary><div id="chartTable"></div></details>
   </section>
 
@@ -178,6 +252,16 @@ const REPO = location.pathname.split("/")[1] || "repo";
 const API = "https://api.github.com/repos/" + OWNER + "/" + REPO;
 
 const state = { password: null, vault: null, cards: [], busy: false };
+
+// ---------- préférences (retenues dans ce navigateur seulement) ----------
+const pref = {
+  get(k, d) { try { const v = localStorage.getItem("p_" + k); return v == null ? d : v; } catch (e) { return d; } },
+  set(k, v) { try { v == null ? localStorage.removeItem("p_" + k) : localStorage.setItem("p_" + k, v); return true; } catch (e) { return false; } }
+};
+let view = pref.get("view", "grid") === "list" ? "list" : "grid";
+let chartRange = "all";
+const EYE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.94 17.94A10.9 10.9 0 0 1 12 19C5 19 1 12 1 12a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>';
 
 // ---------- chiffrement ----------
 async function deriveKey(password, salt, iterations, usage) {
@@ -267,10 +351,51 @@ function el(tag, cls, text) {
 }
 
 let lastUpdated = null;
+const qOf = c => c.quantite > 1 ? c.quantite : 1;
+const validImg = c => !!(c.image && c.image.startsWith("https://assets.tcgdex.net/"));
+const signedPct = v => (v > 0 ? "+" : "") + v.toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " %";
+const fmtDay = u => /^\d{4}-\d{2}-\d{2}/.test(String(u)) ? new Date(String(u).slice(0, 10) + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : String(u);
+function totals() {
+  let now = 0, paid = 0, paidPriced = 0, nowCount = 0, qty = 0;
+  state.cards.forEach(c => {
+    const q = qOf(c); qty += q; paid += (c.prix_paye || 0) * q;
+    if (c.prix_marche != null) { now += c.prix_marche * q; paidPriced += (c.prix_paye || 0) * q; nowCount++; }
+  });
+  return { now, paid, paidPriced, nowCount, qty, refs: state.cards.length };
+}
+function openOnClick(node, c) {
+  if (!c.id) return;
+  node.classList.add("clk"); node.title = "Clique pour modifier et suivre le prix"; node.tabIndex = 0;
+  node.addEventListener("click", ev => { if (!ev.target.closest("button, input, a")) openChart(c.id); });
+  node.addEventListener("keydown", ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === node) { ev.preventDefault(); openChart(c.id); } });
+}
+function moneyTd(text) { const td = el("td", "r"); td.append(el("div", "money", text)); return td; }
+function gridCard(c, q, gain) {
+  const d = el("div", "gcard" + (c.pending ? " pending" : ""));
+  openOnClick(d, c);
+  if (c.id && c.id === chartSel && !$("chartPanel").hidden) d.classList.add("sel");
+  const pic = el("div", "gpic");
+  if (validImg(c)) {
+    const img = el("img"); img.src = c.image; img.alt = c.nom; img.loading = "lazy"; img.referrerPolicy = "no-referrer";
+    pic.append(img);
+  } else pic.append(el("span", "meta", "Pas d'image"));
+  if (q > 1) pic.append(el("span", "qty", "× " + q));
+  if (c.uid && !c.pending) {
+    const b = el("button", "x gdel", "✕"); b.type = "button"; b.title = "Supprimer"; b.setAttribute("aria-label", "Supprimer " + c.nom);
+    b.addEventListener("click", () => removeItem(c));
+    pic.append(b);
+  }
+  d.append(pic, el("div", "gname", c.nom), el("div", "meta", [c.set, c.numero].filter(Boolean).join(" · ")),
+    el("div", "gprice money", fmt(c.prix_marche)));
+  if (gain != null) d.append(el("div", "ggain money " + (gain >= 0 ? "up" : "down"), signed(gain) + (q > 1 ? " · pour " + q : "")));
+  const cap = c.source === "manuel" ? "prix FR saisi" : c.source === "fr" ? "prix FR relevé" : "";
+  if (cap) d.append(el("div", "meta", cap));
+  return d;
+}
+
 function draw(updated) {
   if (updated) lastUpdated = updated;
   const cards = state.cards;
-  let now = 0, paid = 0, nowCount = 0;
   const table = el("table");
   const head = el("tr");
   [["", ""], ["Élément", ""], ["Payé", "r"], ["Marché", "r"], ["Écart", "r"],
@@ -279,15 +404,15 @@ function draw(updated) {
   const thead = el("thead"); thead.append(head);
   const tbody = el("tbody");
   table.append(thead, tbody);
+  const grid = el("div", "cards");
 
   cards.forEach(c => {
-    const q = c.quantite > 1 ? c.quantite : 1;
+    const q = qOf(c);
     const gain = c.prix_marche != null ? (c.prix_marche - c.prix_paye) * q : null;
-    if (c.prix_marche != null) { now += c.prix_marche * q; nowCount++; }
-    paid += (c.prix_paye || 0) * q;
+    if (view === "grid") { grid.append(gridCard(c, q, gain)); return; }
     const tr = el("tr", c.pending ? "pending" : "");
     const imgCell = el("td", "img");
-    if (c.image && c.image.startsWith("https://assets.tcgdex.net/")) {
+    if (validImg(c)) {
       const img = el("img"); img.src = c.image; img.alt = ""; img.referrerPolicy = "no-referrer";
       imgCell.append(img);
       img.addEventListener("mouseenter", () => showZoom(img, c.image));
@@ -295,11 +420,7 @@ function draw(updated) {
     }
     const info = el("td");
     const metaParts = [c.set, c.numero, q > 1 ? "× " + q + " exemplaires" : ""].filter(Boolean).join(" · ");
-    if (c.id) {
-      tr.classList.add("clk"); tr.title = "Clique pour suivre l'évolution du prix"; tr.tabIndex = 0;
-      tr.addEventListener("click", ev => { if (!ev.target.closest("button, input, a")) openChart(c.id); });
-      tr.addEventListener("keydown", ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === tr) { ev.preventDefault(); openChart(c.id); } });
-    }
+    openOnClick(tr, c);
     if (c.id && c.id === chartSel && !$("chartPanel").hidden) tr.classList.add("sel");
     info.append(el("div", "name", c.nom), el("div", "meta", metaParts));
     const del = el("td", "r");
@@ -309,7 +430,7 @@ function draw(updated) {
       del.append(b);
     }
     const mk = el("td", "r");
-    mk.append(el("div", "", fmt(c.prix_marche)));
+    mk.append(el("div", "money", fmt(c.prix_marche)));
     const cap = c.source === "manuel" ? "prix FR saisi"
       : c.source === "fr" ? "prix FR relevé"
       : c.prix_marche != null && c.type !== "scelle" ? "auto · toutes langues" : "";
@@ -324,32 +445,42 @@ function draw(updated) {
     }
     if (c.type !== "scelle" && !c.pending && c.cm_id) {
       const a = el("a", "meta", "offres en français ↗");
-      a.href = "https://www.cardmarket.com/fr/Pokemon/Products?idProduct=" + encodeURIComponent(c.cm_id) + "&language=2";
+      a.href = cmLink(c);
       a.target = "_blank"; a.rel = "noopener noreferrer"; a.style.cssText = "display:block; white-space:nowrap; color:var(--muted); text-decoration:underline";
       a.title = "Ouvre la page Cardmarket de cette carte, déjà filtrée sur les offres en français";
       mk.append(a);
     }
-    tr.append(imgCell, info,
-      el("td", "r", fmt(c.prix_paye)), mk,
-      (() => { const g = el("td", "r " + (gain == null ? "" : gain >= 0 ? "up" : "down")); g.append(el("div", "", signed(gain)));
-        if (q > 1 && gain != null) g.append(el("div", "meta", "pour " + q)); return g; })(),
-      el("td", "r", fmt(c.ccc10)), el("td", "r", fmt(c.ccc95)), el("td", "r", fmt(c.ccc9)), del);
+    const g = el("td", "r " + (gain == null ? "" : gain >= 0 ? "up" : "down")); g.append(el("div", "money", signed(gain)));
+    if (q > 1 && gain != null) g.append(el("div", "meta", "pour " + q));
+    tr.append(imgCell, info, moneyTd(fmt(c.prix_paye)), mk, g,
+      moneyTd(fmt(c.ccc10)), moneyTd(fmt(c.ccc95)), moneyTd(fmt(c.ccc9)), del);
     tbody.append(tr);
   });
 
-  $("list").replaceChildren(table);
-  const tile = (label, value, cls, small) => {
-    const d = el("div", cls); d.append(el("div", "label", label));
-    const v = el("div", "value", value); if (small) v.style.fontSize = "1rem";
-    d.append(v); return d;
-  };
-  const gain = nowCount ? now - paid : null;
-  $("totals").replaceChildren(
-    tile("Valeur actuelle", nowCount ? fmt(now) : "—", "hi"),
-    tile("Payé", fmt(paid)), tile("Écart", signed(gain)),
-    tile("Mis à jour", lastUpdated || "—", "", true));
+  const list = $("list");
+  list.className = "wrap " + view;
+  if (!cards.length) list.replaceChildren(el("p", "help", "Aucune carte pour le moment. Clique sur « + Ajouter » pour commencer."));
+  else list.replaceChildren(view === "grid" ? grid : table);
+  document.querySelectorAll("#viewSeg button").forEach(b => b.classList.toggle("on", b.dataset.v === view));
+
+  const T = totals();
+  const gain = T.nowCount ? T.now - T.paidPriced : null;
+  const pct = gain != null && T.paidPriced > 0 ? gain / T.paidPriced * 100 : null;
+  const dir = gain == null ? "" : gain >= 0 ? "up" : "down";
+  const t1 = el("div", "tile"), v1 = el("div", "value money", T.nowCount ? fmt(T.now) : "—"), s1 = el("div", "sub");
+  v1.style.color = "var(--accent)";
+  s1.append("pour ", el("span", "money", fmt(T.paid)), " investis");
+  t1.append(el("div", "label", "Valeur de la collection"), v1, s1);
+  const t2 = el("div", "tile"), v2 = el("div", "value money " + dir, signed(gain)), s2 = el("div", "sub");
+  if (pct != null) s2.append(el("span", "pill " + dir, signedPct(pct)));
+  t2.append(el("div", "label", "Plus-value latente"), v2, s2);
+  const t3 = el("div", "tile small"), s3 = el("div", "sub", T.refs !== T.qty ? T.refs + " référence" + (T.refs > 1 ? "s" : "") : "");
+  t3.append(el("div", "label", "Exemplaires"), el("div", "value", T.qty + (T.qty > 1 ? " cartes" : " carte")), s3);
+  $("totals").replaceChildren(t1, t2, t3);
+  $("updated").textContent = lastUpdated ? "Prix mis à jour le " + fmtDay(lastUpdated) + "." : "";
   renderChart();
 }
+const cmLink = c => "https://www.cardmarket.com/fr/Pokemon/Products?idProduct=" + encodeURIComponent(c.cm_id) + "&language=2";
 
 // ---------- agrandissement de la carte au survol ----------
 function showZoom(img, src) {
@@ -401,6 +532,8 @@ function fillEdit(c) {
   const f = $("editForm");
   if (!c) { f.hidden = true; editUid = null; return; }
   f.hidden = false;
+  const lk = $("eLink");
+  if (c.cm_id && c.type !== "scelle") { lk.href = cmLink(c); lk.hidden = false; } else lk.hidden = true;
   if (editUid === c.uid) return;                 // ne pas écraser ce que tu es en train de taper
   editUid = c.uid;
   const v = x => x == null ? "" : String(x).replace(".", ",");
@@ -434,6 +567,13 @@ async function saveEdit(ev) {
   $("eSave").disabled = false;
 }
 
+function rangePts(pts) {
+  if (chartRange === "all" || !pts.length) return pts;
+  const last = Date.parse(pts[pts.length - 1].d + "T00:00:00Z"), min = last - Number(chartRange) * 864e5;
+  return pts.filter(p => Date.parse(p.d + "T00:00:00Z") >= min);
+}
+const RANGE_LABEL = { "30": "30 jours", "90": "3 mois", "365": "1 an" };
+
 function renderChart() {
   if ($("chartPanel").hidden) return;
   const cards = state.cards.filter(c => !c.pending && c.id);
@@ -443,20 +583,27 @@ function renderChart() {
   sel.value = chartSel;
 
   const card = cards.find(c => c.id === chartSel);
-  $("chartTitle").textContent = card ? "Modifier et suivre le prix" : "Évolution des prix";
+  $("chartTitle").textContent = card ? "Modifier et suivre le prix" : "Évolution de la valeur";
   fillEdit(card && card.uid ? card : null);
   const img = $("chartImg");
-  if (card && card.image && card.image.startsWith("https://assets.tcgdex.net/")) {
+  if (card && validImg(card)) {
     img.src = card.image; img.referrerPolicy = "no-referrer"; img.hidden = false;
   } else { img.hidden = true; img.removeAttribute("src"); }
 
-  const pts = chartPoints(), plot = $("plot"), sum = $("chartSum");
-  $("chartTable").replaceChildren();
+  const pts = rangePts(chartPoints()), plot = $("plot"), sum = $("chartSum");
+  const delta = $("chartDelta"), legend = $("chartLegend");
+  document.querySelectorAll("#ranges button").forEach(b => b.classList.toggle("on", b.dataset.r === chartRange));
+  $("chartTable").replaceChildren(); delta.replaceChildren(); legend.replaceChildren(); sum.textContent = "";
+  $("chartNote").textContent = "Estimation : prix Cardmarket relevés chaque matin (toutes langues), ou ton prix français saisi à la main."
+    + (chartSel === "all" ? " La courbe monte aussi quand tu ajoutes une carte." : "");
   if (!cards.length) { plot.replaceChildren(); sum.textContent = "Ajoute une carte pour voir son évolution."; return; }
   if (!pts.length) { plot.replaceChildren(); sum.textContent = "Pas encore de prix enregistré : le premier relevé arrive à la prochaine mise à jour du matin."; return; }
 
-  const W = 420, H = 150, L = 50, R = 10, T = 10, B = 24;
+  const paid = card ? (card.prix_paye || 0) * qOf(card) : totals().paid;
+  const W = 640, H = 220, L = 54, R = 12, T = 12, B = 26;
   let lo = Math.min(...pts.map(p => p.v)), hi = Math.max(...pts.map(p => p.v));
+  const showPaid = paid > 0 && paid >= lo * 0.5;                 // la ligne « investi » n'écrase pas la courbe
+  if (showPaid) { lo = Math.min(lo, paid); hi = Math.max(hi, paid); }
   if (hi - lo < 0.01) { lo -= 1; hi += 1; } else { const pad = (hi - lo) * 0.1; lo -= pad; hi += pad; }
   lo = Math.max(0, lo);
   const t = d => Date.parse(d + "T00:00:00Z");
@@ -466,19 +613,33 @@ function renderChart() {
   const money0 = v => v.toLocaleString("fr-FR", { maximumFractionDigits: hi - lo >= 10 ? 0 : 2, minimumFractionDigits: hi - lo >= 10 ? 0 : 2 }) + " €";
 
   const svg = sv("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
-    "aria-label": "Courbe des prix, " + pts.length + " relevé" + (pts.length > 1 ? "s" : "") });
-  for (let i = 0; i < 3; i++) {
-    const v = lo + (hi - lo) * i / 2, y = Y(v);
+    "aria-label": "Courbe de la valeur, " + pts.length + " relevé" + (pts.length > 1 ? "s" : "") });
+  for (let i = 0; i < 4; i++) {
+    const v = lo + (hi - lo) * i / 3, y = Y(v);
     svg.append(sv("line", { x1: L, x2: W - R, y1: y, y2: y, stroke: "var(--line)", "stroke-width": 1 }));
     const lab = sv("text", { x: L - 8, y: y + 4, "text-anchor": "end", fill: "var(--muted)", "font-size": 11 });
     lab.textContent = money0(v); svg.append(lab);
   }
-  const xl = (p, anchor) => { const e = sv("text", { x: X(p), y: H - 8, "text-anchor": anchor, fill: "var(--muted)", "font-size": 11 }); e.textContent = shortDate(p.d); svg.append(e); };
-  if (pts.length === 1) xl(pts[0], "middle");
-  else { xl(pts[0], "start"); xl(pts[pts.length - 1], "end"); }
+  const xl = (x, d, anchor) => { const e = sv("text", { x, y: H - 8, "text-anchor": anchor, fill: "var(--muted)", "font-size": 11 }); e.textContent = shortDate(d); svg.append(e); };
+  if (pts.length === 1) xl(X(pts[0]), pts[0].d, "middle");
+  else {
+    const n = (t1 - t0) / 864e5 >= 3 ? 4 : 2;
+    for (let i = 0; i < n; i++) {
+      const f = i / (n - 1);
+      xl(L + f * (W - L - R), new Date(t0 + f * (t1 - t0)).toISOString().slice(0, 10), i === 0 ? "start" : i === n - 1 ? "end" : "middle");
+    }
+  }
+  const linePts = pts.map(p => X(p).toFixed(1) + "," + Y(p.v).toFixed(1)).join(" ");
+  if (pts.length > 1) {
+    const base = H - B;
+    svg.append(sv("polygon", { points: linePts + " " + X(pts[pts.length - 1]).toFixed(1) + "," + base + " " + X(pts[0]).toFixed(1) + "," + base,
+      fill: "var(--accent)", "fill-opacity": 0.15 }));
+  }
+  if (showPaid)
+    svg.append(sv("line", { x1: L, x2: W - R, y1: Y(paid), y2: Y(paid), stroke: "var(--muted)", "stroke-width": 1.6, "stroke-dasharray": "2 5", "stroke-linecap": "round" }));
   if (pts.length > 1)
-    svg.append(sv("polyline", { pathLength: 1, points: pts.map(p => X(p).toFixed(1) + "," + Y(p.v).toFixed(1)).join(" "),
-      fill: "none", stroke: "var(--accent)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+    svg.append(sv("polyline", { pathLength: 1, points: linePts,
+      fill: "none", stroke: "var(--accent)", "stroke-width": 2.2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
   (pts.length <= 40 ? pts : [pts[pts.length - 1]]).forEach(p =>
     svg.append(sv("circle", { cx: X(p), cy: Y(p.v), r: 3, fill: "var(--accent)", stroke: "var(--bg)", "stroke-width": 2 })));
 
@@ -505,10 +666,17 @@ function renderChart() {
   plot.replaceChildren(svg, tip);
 
   const first = pts[0], last = pts[pts.length - 1], diff = last.v - first.v;
-  sum.textContent = pts.length === 1
-    ? "Un seul relevé pour l'instant (" + fmt(last.v) + " le " + shortDate(last.d) + "). La courbe se dessinera au fil des jours, un relevé par matin."
-    : "Dernier relevé " + shortDate(last.d) + " : " + fmt(last.v) + " (" + signed(diff) + " depuis le " + shortDate(first.d) + ")."
-      + (chartSel === "all" ? " La valeur totale monte aussi quand tu ajoutes une carte." : "");
+  if (pts.length === 1) {
+    sum.textContent = "Un seul relevé pour l'instant (" + fmt(last.v) + " le " + shortDate(last.d) + "). La courbe se dessinera au fil des jours, un relevé par matin.";
+  } else {
+    const pct = first.v > 0 ? diff / first.v * 100 : null, dir = diff >= 0 ? "up" : "down";
+    const pill = el("span", "pill " + dir); pill.append(el("span", "money", signed(diff)), pct == null ? "" : " · " + signedPct(pct));
+    delta.append(el("strong", "money", fmt(last.v)), pill,
+      el("span", "meta", chartRange === "all" ? "depuis le " + shortDate(first.d) : "sur " + RANGE_LABEL[chartRange] + " (depuis le " + shortDate(first.d) + ")"));
+  }
+  const l1 = el("span"); l1.append(el("i"), "Valeur estimée");
+  const l2 = el("span"); l2.append(el("i", "dot"), "Investi : ", el("span", "money", fmt(paid)), showPaid ? "" : " (hors graphique)");
+  legend.append(l1, l2);
 
   const tb = el("table"), body = el("tbody");
   pts.slice().reverse().forEach(p => { const tr = el("tr"); tr.append(el("td", "", shortDate(p.d)), el("td", "r", fmt(p.v))); body.append(tr); });
@@ -794,6 +962,55 @@ $("tokenPanel").addEventListener("submit", ev => {
   const t = $("tokenIn").value.trim();
   if (t) { setToken(t); $("tokenIn").value = ""; $("tokenState").textContent = "Jeton enregistré dans ce navigateur."; }
 });
+// ---------- réglages : thème, fond d'écran, montants cachés, affichage ----------
+function applyTheme(t) {
+  const th = t === "light" || t === "dark" ? t : "auto", r = document.documentElement;
+  if (th === "auto") delete r.dataset.theme; else r.dataset.theme = th;
+  document.querySelectorAll("#themeSeg button").forEach(b => b.classList.toggle("on", b.dataset.t === th));
+}
+function applyHide(on) {
+  document.body.classList.toggle("hide-money", on);
+  const b = $("btnEye"); b.innerHTML = on ? EYE_OFF : EYE;
+  b.setAttribute("aria-pressed", String(on)); b.title = on ? "Afficher les montants" : "Cacher les montants";
+}
+function applyWall(url) {
+  $("wall").style.backgroundImage = url ? 'url("' + url + '")' : "";
+  document.body.classList.toggle("has-wall", !!url);
+  $("veilRow").hidden = !url; $("wallClear").hidden = !url;
+}
+function applyVeil(v) { document.documentElement.style.setProperty("--veil", String(Math.min(90, Math.max(0, v)) / 100)); }
+
+async function chooseWall(file) {
+  const err = $("setErr"); err.textContent = "";
+  try {
+    if (!file || !/^image\//.test(file.type)) throw new Error("Choisis un fichier image (photo, capture…).");
+    let bmp;
+    try { bmp = await createImageBitmap(file); } catch (e) { throw new Error("Cette image n'a pas pu être lue (format non pris en charge)."); }
+    const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    const cv = document.createElement("canvas"); cv.width = Math.max(1, Math.round(bmp.width * k)); cv.height = Math.max(1, Math.round(bmp.height * k));
+    const ctx = cv.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.drawImage(bmp, 0, 0, cv.width, cv.height);
+    const url = cv.toDataURL("image/jpeg", 0.82);
+    if (!pref.set("wall", url)) throw new Error("Image trop lourde pour ce navigateur : essaie-en une plus petite.");
+    applyWall(url);
+  } catch (e) { err.textContent = e.message || "Impossible d'utiliser cette image."; }
+}
+
+applyTheme(pref.get("theme", "auto"));
+applyWall(pref.get("wall", ""));
+{ const v = Number(pref.get("veil", "55")); $("veil").value = isNaN(v) ? 55 : v; applyVeil(isNaN(v) ? 55 : v); }
+applyHide(pref.get("hide", "0") === "1");
+$("btnEye").addEventListener("click", () => { const on = !document.body.classList.contains("hide-money"); pref.set("hide", on ? "1" : "0"); applyHide(on); });
+$("btnSet").addEventListener("click", () => { $("setPanel").hidden = !$("setPanel").hidden; });
+$("setClose").addEventListener("click", () => { $("setPanel").hidden = true; });
+$("setToken").addEventListener("click", openToken);
+$("themeSeg").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; pref.set("theme", b.dataset.t); applyTheme(b.dataset.t); });
+$("wallPick").addEventListener("click", () => $("wallFile").click());
+$("wallFile").addEventListener("change", async () => { const f = $("wallFile").files[0]; $("wallFile").value = ""; if (f) await chooseWall(f); });
+$("wallClear").addEventListener("click", () => { pref.set("wall", null); applyWall(""); $("setErr").textContent = ""; });
+$("veil").addEventListener("input", () => { applyVeil(Number($("veil").value)); pref.set("veil", $("veil").value); });
+$("viewSeg").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; view = b.dataset.v === "list" ? "list" : "grid"; pref.set("view", view); hideZoom(); draw(); });
+$("ranges").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; chartRange = b.dataset.r; renderChart(); });
 if (SR) { $("btnMic").hidden = false; $("fMic").hidden = false; $("micNote").hidden = false; }
 $("btnMic").addEventListener("click", dictate);
 $("fMic").addEventListener("click", dictate);
