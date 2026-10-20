@@ -10,7 +10,8 @@ Met à jour le coffre chiffré data/vault.json (cartes, produits scellés, prix 
 - Prix « français » : le prix Cardmarket (toutes langues) sert de prix de base. Il peut être remplacé
   par un prix saisi à la main (champ prix_fr) ou par le prix relevé sur CardTrader depuis le site
   (champ fr_auto, valable 14 jours). Priorité : saisi à la main > CardTrader > Cardmarket.
-- Les prix CCC viennent de la watchlist (estimations saisies à la main).
+- Les prix CCC (10, 9.5, 9) sont relevés automatiquement sur les ventes réussies de Graded Card Center
+  (scripts/gcc_prices.py), en euros, sans estimation. Une valeur saisie à la main passe toujours avant.
 
 Le site peut envoyer un message chiffré (variable PAYLOAD) pour ajouter ou supprimer
 un élément : {"action": "add", "entry": {...}} ou {"action": "delete", "uid": "..."}.
@@ -34,6 +35,8 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
+import gcc_prices  # prix CCC réels relevés sur Graded Card Center (scripts/gcc_prices.py)
+
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 VAULT = DATA / "vault.json"
@@ -41,9 +44,6 @@ API = "https://api.tcgdex.net/v2"
 PRIX_BOOSTER = 5.99
 ITERATIONS = 600_000
 FR_AUTO_JOURS = 14
-# Estimation du prix d'une carte gradée CCC : multiple du prix actuel (aucune source gratuite de ventes CCC).
-# Une valeur saisie à la main n'est jamais remplacée.
-CCC_COEF = {"10": 1.8, "9.5": 1.4, "9": 1.15}
 
 
 # ---------- chiffrement ----------
@@ -372,15 +372,22 @@ def main():
             if not override:
                 price, source = old.get("prix_marche"), old.get("source", "cm")
         ccc_manual = entry.get("ccc") or {}
-        ccc_vals, ccc_auto = {}, []
-        for k, coef in CCC_COEF.items():
+        ccc_gcc = {}
+        try:
+            ccc_gcc = gcc_prices.releve(entry)
+        except Exception as exc:  # GCC injoignable ou page changée : on garde les derniers prix connus
+            ccc_gcc = old.get("ccc_gcc") or {}
+            print(f"  GCC indisponible pour {entry['nom']} : {exc}")
+        ccc_vals, ccc_auto = {}, []  # ccc_auto reste vide : plus aucune estimation
+        for k in gcc_prices.NOTES:
             if ccc_manual.get(k) is not None:
                 ccc_vals[k] = ccc_manual[k]
-            elif price is not None:
-                ccc_vals[k] = round(price * coef, 2)
-                ccc_auto.append(k)
+            elif (ccc_gcc.get(k) or {}).get("prix") is not None:
+                ccc_vals[k] = ccc_gcc[k]["prix"]
             else:
                 ccc_vals[k] = None
+        resume = ", ".join(f"{k}={v['prix']} € ({v['n']} ventes)" for k, v in ccc_gcc.items())
+        print(f"  {entry['nom']} : CCC {resume or 'aucune vente trouvée'}")
         cards.append({
             "id": cid,
             "uid": entry["uid"],
@@ -402,6 +409,7 @@ def main():
             "ccc95": ccc_vals["9.5"],
             "ccc9": ccc_vals["9"],
             "ccc_auto": ccc_auto,
+            "ccc_gcc": ccc_gcc,
         })
         if price is not None and (not failed or override):
             history.setdefault(cid, {})[today] = price
