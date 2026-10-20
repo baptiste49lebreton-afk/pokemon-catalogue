@@ -3,8 +3,8 @@ Prix réels des cartes gradées CCC, relevés sur les ventes réussies de Graded
 
 - Page publique, aucune connexion ni mot de passe : on lit la liste « Ventes réussies » filtrée sur CCC.
 - Prix en euros, cartes françaises uniquement (c'est ce que GCC affiche).
-- Prix retenu pour une note = médiane des dernières ventes de cette note (au plus MAX_VENTES,
-  sur les MAX_JOURS derniers jours). Aucune estimation : sans vente, la note reste vide.
+- Prix retenu pour une note = médiane des 3 dernières ventes de cette note (fenêtre de 180 jours,
+  élargie à 1 an s'il y a moins de 2 ventes récentes). Aucune estimation : sans vente, la note reste vide.
 - Une seule requête par carte, une fois par jour.
 """
 import html as htmllib
@@ -17,8 +17,9 @@ from datetime import date, datetime, timedelta
 
 BASE = "https://gradedcardcenter.com/filtres"
 NOTES = ("10", "9.5", "9")
-MAX_VENTES = 5
-MAX_JOURS = 365
+MAX_VENTES = 3     # on retient les 3 dernières ventes de la note
+JOURS_RECENTS = 180  # fenêtre privilégiée : le prix reflète le marché actuel
+JOURS_MAX = 365      # élargie à 1 an seulement s'il y a moins de 2 ventes récentes
 PAUSE_S = 2  # politesse : 2 s entre deux cartes
 
 _ITEM = re.compile(
@@ -84,10 +85,13 @@ def fetch(nom, numero):
 def prix_ccc(ventes, aujourdhui=None):
     """{note: {"prix": médiane, "n": nb de ventes retenues, "derniere": date ISO}} pour 10, 9.5 et 9."""
     aujourdhui = aujourdhui or date.today()
-    limite = aujourdhui - timedelta(days=MAX_JOURS)
     out = {}
     for note in NOTES:
-        v = sorted((j, p) for n, p, j in ventes if n == note and j >= limite)[-MAX_VENTES:]
+        toutes = sorted((j, p) for n, p, j in ventes if n == note)
+        v = [(j, p) for j, p in toutes if j >= aujourdhui - timedelta(days=JOURS_RECENTS)]
+        if len(v) < 2:  # trop peu de ventes récentes : on élargit à 1 an
+            v = [(j, p) for j, p in toutes if j >= aujourdhui - timedelta(days=JOURS_MAX)]
+        v = v[-MAX_VENTES:]
         if v:
             out[note] = {"prix": round(statistics.median(p for _, p in v), 2),
                          "n": len(v), "derniere": v[-1][0].isoformat()}
