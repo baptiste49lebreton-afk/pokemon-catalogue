@@ -162,6 +162,14 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
 .rank { color:var(--muted); font-weight:600; margin-right:6px; }
 .rlist .other { margin-top:2px; }
 .rlist td.big { font-weight:700; }
+.cres { margin-top:10px; display:grid; gap:6px; }
+.cres button.cr { display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:var(--field); color:var(--fg); border:1px solid var(--line); font-weight:500; padding:6px 10px; }
+.cres button.cr.on { border-color:var(--accent); }
+.cres button.cr img { width:32px; height:auto; border-radius:3px; flex:none; }
+.fiche { margin:14px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:14px 0; display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start; }
+.fiche img.big { width:150px; height:auto; border-radius:8px; }
+.fiche .fbody { flex:1; min-width:260px; overflow-x:auto; }
+.fiche .fprice { font:700 1.4rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif; font-variant-numeric:tabular-nums; margin-top:8px; }
 .pill.liq-a { color:var(--up); } .pill.liq-b { color:var(--accent); } .pill.liq-c { color:var(--muted); } .pill.liq-d { color:var(--down); }
 .rlist .liqmeta { white-space:nowrap; }
 /* ---- téléphone : l'ordinateur n'est pas concerné ---- */
@@ -346,6 +354,13 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
   <div class="wrap colonly" id="list"></div>
 
   <section id="rechPage" hidden>
+    <div class="panel" id="cardPanel">
+      <h2>Chercher une carte</h2>
+      <input id="cQ" type="search" maxlength="60" autocomplete="off" aria-label="Chercher une carte" placeholder="Nom, extension ou numéro, ex. Noctali-ex 161" style="width:100%">
+      <div id="cFiche"></div>
+      <div class="cres" id="cRes"></div>
+      <p class="help" style="margin-bottom:0">Fiche d'une carte parmi celles du relevé (cartes françaises vendues en CCC 9 à 10 sur Graded Card Center). Les chiffres utilisent les frais réglés plus bas.</p>
+    </div>
     <div class="panel">
       <h2>Acheter en loose, faire grader en CCC</h2>
       <p class="help" style="margin-top:0">Classement des cartes françaises les plus rentables : prix loose Cardmarket (tendance, toutes langues) comparé aux ventes réussies en CCC sur Graded Card Center. Les frais de gradation, d'assurance et d'envoi sont déjà déduits.</p>
@@ -1243,6 +1258,65 @@ function liquidity(c, s) {
   const lvl = score >= 88 ? ["Très liquide", "a"] : score >= 72 ? ["Liquide", "b"] : score >= 50 ? ["Moyen", "c"] : ["Lent", "d"];
   return { score, days, hype, label: lvl[0], cls: lvl[1] };
 }
+// ---------- recherche d'une carte : fiche de statistiques ----------
+let cardSel = null, cardShown = [];
+function cardCalc(c, s) {
+  const ship = rNum("r_ship", 3), comm = rNum("r_comm", 0), extra = (SPEED[pref.get("r_speed", "regular")] || SPEED.regular)[1];
+  const fee = cccFee(s.prix).fee + extra, ins = 0.02 * s.prix, cost = c.loose + fee + ins + ship, gain = s.prix * (1 - comm / 100) - cost;
+  return { fee: fee + ins + ship, gain, roi: gain / cost * 100, liq: liquidity(c, s) };
+}
+function drawFiche(c) {
+  const box = el("div", "fiche");
+  if (validImg(c)) { const img = el("img", "big"); img.src = c.image; img.alt = ""; img.referrerPolicy = "no-referrer"; box.append(img); }
+  const body = el("div", "fbody");
+  body.append(el("div", "name", c.nom), el("div", "meta", [c.set, c.numero, c.annee].filter(Boolean).join(" · ")));
+  body.append(el("div", "label", "Prix loose (Cardmarket, tendance)"), el("div", "fprice", fmt(c.loose)));
+  if (c.cm_id) {
+    const a = el("a", "meta", "Voir sur Cardmarket ↗"); a.href = cmLink(c); a.target = "_blank"; a.rel = "noopener noreferrer";
+    a.style.cssText = "display:inline-block; margin-top:2px; color:var(--muted); text-decoration:underline"; body.append(a);
+  }
+  const table = el("table"), thead = el("thead"), head = el("tr"), tbody = el("tbody");
+  ["Note", "Prix CCC", "Frais", "Gain net", "Rendement", "Liquidité"].forEach((t, j) => head.append(el("th", j ? "r" : "", t)));
+  thead.append(head); table.append(thead, tbody); table.style.marginTop = "12px";
+  for (const note of ["10", "9.5", "9"]) {
+    const s = (c.ccc || {})[note], tr = el("tr");
+    tr.append(el("td", "name", "CCC " + note));
+    if (!s) { const td = el("td", "meta", "Aucune vente récente connue"); td.colSpan = 5; tr.append(td); tbody.append(tr); continue; }
+    const ccc = moneyTd(fmt(s.prix));
+    ccc.append(el("div", "meta", s.n + " vente" + (s.n > 1 ? "s" : "") + " · " + new Date(s.derniere + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "2-digit" })));
+    const liqd = liquidity(c, s), stars = Math.max(1, Math.min(5, Math.round(liqd.hype / 20))), lt = el("td", "r");
+    lt.append(el("span", "pill liq-" + liqd.cls, liqd.label), el("div", "meta liqmeta", "score " + liqd.score + " · hype " + "★".repeat(stars) + "☆".repeat(5 - stars)));
+    if (c.loose == null) { tr.append(ccc, el("td", "r", "—"), el("td", "r", "—"), el("td", "r", "—"), lt); tbody.append(tr); continue; }
+    const k = cardCalc(c, s), dir = k.gain >= 0 ? "up" : "down";
+    const gain = el("td", "r big " + dir); gain.append(el("div", "money", signed(k.gain)));
+    const roi = el("td", "r big " + dir); roi.append(el("span", "pill " + dir, signedPct(k.roi)));
+    tr.append(ccc, moneyTd("− " + fmt(k.fee)), gain, roi, lt); tbody.append(tr);
+  }
+  body.append(table); box.append(body);
+  return box;
+}
+function renderCardSearch() {
+  const res = $("cRes"), fiche = $("cFiche");
+  if (!research) { res.replaceChildren(); fiche.replaceChildren(); return; }
+  const words = norm($("cQ").value).split(" ").filter(Boolean);
+  let found = [];
+  if (words.length) found = research.cartes.filter(c => { const h = norm(c.nom + " " + c.titre_gcc + " " + c.set + " " + c.numero); return words.every(w => h.includes(w)); });
+  found.sort((a, b) => (norm(a.nom).startsWith(words[0]) ? 0 : 1) - (norm(b.nom).startsWith(words[0]) ? 0 : 1) || (b.loose || 0) - (a.loose || 0));
+  if (found.length === 1) cardSel = found[0]; else if (!found.includes(cardSel)) cardSel = null;
+  cardShown = found.slice(0, 8);
+  const list = [];
+  if (words.length && !found.length) list.push(el("p", "help", "Aucune carte trouvée dans le relevé. Vérifie l'orthographe ou cherche avec le numéro."));
+  if (found.length > 1) {
+    cardShown.forEach((c, i) => {
+      const b = el("button", "cr" + (c === cardSel ? " on" : "")); b.type = "button"; b.dataset.i = String(i);
+      if (validImg(c)) { const img = el("img"); img.src = c.image; img.alt = ""; img.loading = "lazy"; img.referrerPolicy = "no-referrer"; b.append(img); }
+      const t = el("span"); t.append(el("span", "name", c.nom), el("span", "meta", " · " + [c.set, c.numero].filter(Boolean).join(" · "))); b.append(t); list.push(b);
+    });
+    if (found.length > cardShown.length) list.push(el("p", "help", (found.length - cardShown.length) + " autres cartes correspondent : précise ta recherche (extension, numéro)."));
+  }
+  res.replaceChildren(...list);
+  fiche.replaceChildren(...(cardSel ? [drawFiche(cardSel)] : []));
+}
 function researchRows() {
   const note = pref.get("r_note", "10"), min = rNum("r_min", 20), max = rNum("r_max", Infinity), minN = Number(pref.get("r_n", "2")) || 1;
   const ship = rNum("r_ship", 3), comm = rNum("r_comm", 0), extra = (SPEED[pref.get("r_speed", "regular")] || SPEED.regular)[1];
@@ -1261,6 +1335,7 @@ function renderResearch() {
   document.querySelectorAll("#rNote button").forEach(b => b.classList.toggle("on", b.dataset.n === note));
   document.querySelectorAll("#rSort button").forEach(b => b.classList.toggle("on", b.dataset.s === pref.get("r_sort", "roi")));
   const box = $("rList");
+  renderCardSearch();
   if (!research) { $("rInfo").textContent = researchErr; box.replaceChildren(); return; }
   const rows = researchRows(), shown = rows.slice(0, 150);
   $("rInfo").textContent = "Relevé du " + fmtDay(research.updated) + " · " + research.cartes.length + " cartes analysées · "
@@ -1528,6 +1603,8 @@ window.addEventListener("hashchange", () => { if (state.password) setPage(locati
 [["rN", "r_n", "2"], ["rSpeed", "r_speed", "regular"]].forEach(([id, k, d]) => {
   $(id).value = pref.get(k, d); $(id).addEventListener("change", () => { pref.set(k, $(id).value); renderResearch(); }); });
 $("rNote").addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) { pref.set("r_note", b.dataset.n); renderResearch(); } });
+$("cQ").addEventListener("input", renderCardSearch);
+$("cRes").addEventListener("click", ev => { const b = ev.target.closest("button.cr"); if (b && cardShown[+b.dataset.i]) { cardSel = cardShown[+b.dataset.i]; renderCardSearch(); } });
 $("rSort").addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) { pref.set("r_sort", b.dataset.s); renderResearch(); } });
 if (SR) { $("btnMic").hidden = false; $("fMic").hidden = false; $("micNote").hidden = false; }
 $("btnMic").addEventListener("click", dictate);
