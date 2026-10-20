@@ -1264,15 +1264,15 @@ function liquidity(c, s) {
 // ---------- recherche d'une carte : fiche de statistiques ----------
 // ---------- fiche d’une carte (nouvel onglet) : recherche pré-remplie sur Vinted / eBay / Cardmarket ----------
 const FICHE_KEY = new URLSearchParams(location.search).get("carte") || "";
-const SHOP_VINTED_STATES = [6, 1, 2, 3]; // Vinted : neuf avec étiquette, neuf sans étiquette, très bon état, bon état
+const SHOP_VINTED_STATES = [6, 1, 2]; // Vinted : neuf avec étiquette, neuf sans étiquette, très bon état (sans « bon état »)
 const SHOP_CM_MIN_CONDITION = 4; // Cardmarket : 2 = Near Mint, 3 = Excellent, 4 = Bon (GD) ou mieux
 const cardKey = c => c.cm_id ? "cm" + c.cm_id : norm([c.nom, c.set, c.numero].join(" ")).replace(/ /g, "-");
 function openFiche(c) { window.open(location.pathname + "?carte=" + encodeURIComponent(cardKey(c)) + "#fiche", "_blank"); }
 function shopQuery(c) { return [String(c.nom).replace(/-/g, " "), String(c.numero || "").replace(/\/.*$/, "")].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(); }
 function shopUrl(site, c) {
 const q = encodeURIComponent(shopQuery(c));
-if (site === "vinted") return "https://www.vinted.fr/catalog?search_text=" + q + SHOP_VINTED_STATES.map(s => "&status_ids[]=" + s).join("");
-if (site === "ebay") return "https://www.ebay.fr/sch/i.html?_nkw=" + q + "&LH_BIN=1&_sop=15";
+if (site === "vinted") return "https://www.vinted.fr/catalog?search_text=" + q + SHOP_VINTED_STATES.map(s => "&status_ids[]=" + s).join("") + "&order=price_low_to_high&price_from=2";
+if (site === "ebay") return "https://www.ebay.fr/sch/i.html?_nkw=" + q + "&LH_BIN=1&_sop=15&_udlo=2";
 if (site === "cardmarket") return c.cm_id ? cmLink(c) + "&language=2&minCondition=" + SHOP_CM_MIN_CONDITION : "https://www.cardmarket.com/fr/Pokemon/Products/Search?searchString=" + q;
 return "";
 }
@@ -1290,7 +1290,7 @@ sel.setAttribute("aria-label", "Chercher cette carte sur un site d’achat");
 [["", "Acheter sur…"], ["vinted", "Vinted"], ["ebay", "eBay"], ["cardmarket", "Cardmarket"]].forEach(o => sel.append(new Option(o[1], o[0])));
 sel.addEventListener("change", () => { const u = shopUrl(sel.value, c); sel.value = ""; if (u) window.open(u, "_blank", "noopener"); });
 bar.append(el("span", "label", "Chercher cette carte"), sel);
-const help = el("p", "help", "La recherche « " + shopQuery(c) + " » s’ouvre dans un nouvel onglet, et tu achètes sur le site choisi. Vinted : bon état ou mieux (pas de filtre de langue, regarde les photos). eBay : achat immédiat, du moins cher au plus cher. Cardmarket : cartes en français, bon état ou mieux.");
+const help = el("p", "help", "La recherche « " + shopQuery(c) + " » s’ouvre dans un nouvel onglet, et tu achètes sur le site choisi. Vinted : neuf ou très bon état, du moins cher au plus cher, sans les annonces à 1 €. eBay : achat immédiat (pas d’enchères), du moins cher au plus cher, dès 2 €. Pas de filtre de langue sur Vinted ni eBay : regarde les photos. Cardmarket : cartes en français, bon état ou mieux.");
 panel.append(top, bar, help, drawFiche(c));
 box.replaceChildren(panel);
 }
