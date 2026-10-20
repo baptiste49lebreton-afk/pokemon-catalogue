@@ -206,9 +206,9 @@ button.ic svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-
       <label>Prix payé (€) <input id="fPaye" inputmode="decimal" placeholder="vide = 5,99"></label>
       <label>Quantité <input id="fQ" inputmode="numeric" placeholder="1"></label>
       <label>Prix actuel (€) <input id="fFr" inputmode="decimal" placeholder="vide = automatique"></label>
-      <label>CCC 10 (€) <input id="fC10" inputmode="decimal" placeholder="vide = estimé"></label>
-      <label>CCC 9.5 (€) <input id="fC95" inputmode="decimal" placeholder="vide = estimé"></label>
-      <label>CCC 9 (€) <input id="fC9" inputmode="decimal" placeholder="vide = estimé"></label>
+      <label>CCC 10 (€) <input id="fC10" inputmode="decimal" placeholder="vide = prix GCC"></label>
+      <label>CCC 9.5 (€) <input id="fC95" inputmode="decimal" placeholder="vide = prix GCC"></label>
+      <label>CCC 9 (€) <input id="fC9" inputmode="decimal" placeholder="vide = prix GCC"></label>
     </div>
     <p class="help">Écris ou dis juste le nom (ex. « Zekrom » ou « Zekrom ex BWR », avec le numéro si tu veux) : la liste des cartes avec leurs images apparaît en dessous, fais-la défiler et touche la tienne. L'extension et le numéro se remplissent tout seuls. Le prix du marché est ensuite mis à jour chaque matin.</p>
     <div class="row">
@@ -240,9 +240,9 @@ button.ic svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-
         <label>Prix payé (€) <input id="eP" inputmode="decimal" placeholder="vide = 5,99"></label>
         <label>Quantité <input id="eQ" inputmode="numeric" placeholder="1"></label>
         <label>Prix actuel (€) <input id="eFr" inputmode="decimal" placeholder="vide = automatique"></label>
-        <label>CCC 10 (€) <input id="eC10" inputmode="decimal" placeholder="vide = estimé"></label>
-        <label>CCC 9.5 (€) <input id="eC95" inputmode="decimal" placeholder="vide = estimé"></label>
-        <label>CCC 9 (€) <input id="eC9" inputmode="decimal" placeholder="vide = estimé"></label>
+        <label>CCC 10 (€) <input id="eC10" inputmode="decimal" placeholder="vide = prix GCC"></label>
+        <label>CCC 9.5 (€) <input id="eC95" inputmode="decimal" placeholder="vide = prix GCC"></label>
+        <label>CCC 9 (€) <input id="eC9" inputmode="decimal" placeholder="vide = prix GCC"></label>
       </div>
       <div class="row"><button type="submit" id="eSave">Enregistrer les modifications</button><a id="eLink" class="meta" target="_blank" rel="noopener noreferrer" hidden style="text-decoration:underline">voir sur Cardmarket ↗</a><span class="err" id="eErr" role="alert"></span></div>
     </form>
@@ -411,8 +411,7 @@ function openOnClick(node, c) {
   node.addEventListener("click", ev => { if (!ev.target.closest("button, input, a")) openChart(c.id); });
   node.addEventListener("keydown", ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === node) { ev.preventDefault(); openChart(c.id); } });
 }
-const CCC_COEF = { "10": 1.8, "9.5": 1.4, "9": 1.15 };      // même estimation que le script du matin
-const cccEst = (k, price) => price == null ? null : Math.round(price * CCC_COEF[k] * 100) / 100;
+const cccEst = () => null;   // plus d'estimation : le prix CCC est relevé sur GCC par le script du matin
 // Tarif de gradation CCC (formule Regular), selon la valeur de la carte. Relevé sur cccgrading.com/en/prices le 20/10/2026.
 const cccFee = p => p == null ? null : p <= 50 ? { fee: 20, tier: "1 à 50 €" } : p <= 100 ? { fee: 23, tier: "51 à 100 €" } : p <= 500 ? { fee: 27, tier: "101 à 500 €" } : { fee: 31, tier: "plus de 500 €" };
 function feeTd(c, q) {
@@ -504,7 +503,7 @@ function draw(updated) {
   [["", ""], ["Élément", ""], ["Payé", "r"], ["Prix actuel", "r"], ["Écart", "r"],
    ["CCC 10 (est.)", "r"], ["CCC 9.5 (est.)", "r"], ["CCC 9 (est.)", "r"], ["Frais CCC", "r"], ["", ""]]
     .forEach(([t, c]) => { const th = el("th", c, t); if (t === "Frais CCC") th.title = "Simulation des frais de gradation CCC (formule Regular), selon le prix actuel de la carte : 1 à 50 € = 20 € ; 51 à 100 € = 23 € ; 101 à 500 € = 27 € ; plus de 500 € = 31 €. En option : Express +5 €, Super-Express +20 €, assurance 2 % de la valeur. Tarif relevé sur cccgrading.com le 20/10/2026 : vérifie-le avant d'envoyer tes cartes.";
-      if (t === "Prix actuel") th.title = "Prix Cardmarket mis à jour automatiquement chaque matin. Tu peux le remplacer avec le crayon ✎ : il ne bouge alors plus tout seul. Les prix CCC sont des estimations, sauf ceux que tu saisis."; head.append(th); });
+      if (t === "Prix actuel") th.title = "Prix Cardmarket mis à jour automatiquement chaque matin. Tu peux le remplacer avec le crayon ✎ : il ne bouge alors plus tout seul. Prix CCC réels : médiane des dernières ventes réussies sur Graded Card Center (en euros), sauf ceux que tu saisis."; head.append(th); });
   const thead = el("thead"); thead.append(head);
   const tbody = el("tbody");
   table.append(thead, tbody);
