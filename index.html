@@ -162,6 +162,8 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
 .rank { color:var(--muted); font-weight:600; margin-right:6px; }
 .rlist .other { margin-top:2px; }
 .rlist td.big { font-weight:700; }
+.pill.liq-a { color:var(--up); } .pill.liq-b { color:var(--accent); } .pill.liq-c { color:var(--muted); } .pill.liq-d { color:var(--down); }
+.rlist .liqmeta { white-space:nowrap; }
 /* ---- téléphone : l'ordinateur n'est pas concerné ---- */
 @media (max-width: 640px) {
   body { padding-top:16px; }
@@ -350,7 +352,7 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
       <div class="setrow"><span class="label">Note visée</span>
         <div class="seg" id="rNote" role="group" aria-label="Note visée"><button type="button" data-n="10">CCC 10</button><button type="button" data-n="9.5">CCC 9.5</button><button type="button" data-n="9">CCC 9</button></div></div>
       <div class="setrow"><span class="label">Classer par</span>
-        <div class="seg" id="rSort" role="group" aria-label="Classer par"><button type="button" data-s="roi">Rendement %</button><button type="button" data-s="gain">Gain €</button></div></div>
+        <div class="seg" id="rSort" role="group" aria-label="Classer par"><button type="button" data-s="roi">Rendement %</button><button type="button" data-s="gain">Gain €</button><button type="button" data-s="liq">Liquidité</button></div></div>
       <div class="grid" style="margin-top:12px">
         <label>Prix loose min (€) <input id="rMin" inputmode="decimal" placeholder="ex. 20"></label>
         <label>Prix loose max (€) <input id="rMax" inputmode="decimal" placeholder="sans limite"></label>
@@ -369,6 +371,7 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
     <p class="updated" id="rInfo"></p>
     <div class="wrap list rlist" id="rList"></div>
     <p class="help" id="rNote2">À savoir : les ventes GCC sont des cartes françaises, alors que le prix Cardmarket mélange toutes les langues. Le prix CCC retenu est la médiane des 3 dernières ventes de la note (6 derniers mois en priorité). Une carte n'obtient pas toujours la note visée : regarde aussi ce que donnent les notes en dessous.</p>
+    <p class="help" id="rLiq2">Liquidité (sur 100) : 65 % l'activité des ventes CCC de la note visée (date de la dernière vente et nombre de ventes récentes), 35 % la hype du Pokémon (estimation de sa popularité auprès des collectionneurs, étoiles de 1 à 5). Sans vente depuis plus de 60 jours, une carte ne passe jamais « Liquide » (et reste « Lent » après 4 mois), même très populaire. C'est un indicateur, pas une garantie de revente.</p>
   </section>
   <img id="zoom" alt="">
 </main>
@@ -1214,6 +1217,32 @@ async function loadResearch() {
   renderResearch();
 }
 const rNum = (k, d) => { const v = parseFloat(String(pref.get(k, "")).replace(",", ".")); return isNaN(v) || v < 0 ? d : v; };
+// Hype du Pokémon (0-100) : estimation de popularité auprès des collectionneurs (cartes les plus gradées : Pikachu, Dracaufeu, Gengar, Mewtwo, Mew, Noctali, Évoli...).
+const HYPE = [
+  [100, ["dracaufeu", "pikachu"]],
+  [92, ["mewtwo", "mew", "noctali", "ectoplasma", "evoli"]],
+  [85, ["rayquaza", "lugia", "amphinobi", "lucario", "gardevoir", "dracolosse", "tortank", "aquali", "pyroli", "voltali", "mentali", "nymphali", "phyllali", "givrali", "arceus"]],
+  [75, ["florizarre", "carchacrok", "darkrai", "latias", "latios", "zoroark", "typhlosion", "bulbizarre", "absol", "sulfura", "ho oh", "aligatueur"]],
+  [65, ["reshiram", "zekrom", "artikodin", "electhor", "zeraora", "milobellus", "ptera", "psykokwak", "morpeko", "metalosse", "kyurem"]],
+  [55, ["miaouss", "nidoking", "diancie", "lugulabre", "majaspic", "trioxhydre", "altaria", "mimiqui", "angoliath"]],
+];
+function hypeOf(nom) {
+  const n = norm(nom); let best = 40;
+  for (const [v, names] of HYPE) if (v > best && names.some(k => n.includes(k))) best = v;
+  return best;
+}
+// Liquidité = 65 % activité des ventes CCC (récence + volume) + 35 % hype ; plafonnée à « Moyen » sans vente depuis 60 jours, à « Lent » depuis 4 mois.
+function liquidity(c, s) {
+  const ref = new Date(((research && research.updated) || new Date().toISOString().slice(0, 10)) + "T12:00:00");
+  const days = Math.max(0, Math.round((ref - new Date(s.derniere + "T12:00:00")) / 864e5));
+  const rec = days <= 7 ? 100 : days <= 14 ? 85 : days <= 30 ? 65 : days <= 60 ? 40 : days <= 120 ? 20 : 5;
+  const vol = s.v90 != null ? Math.min(s.v90 / 6, 1) * 100 : Math.min(s.n, 3) / 3 * 100;
+  const hype = hypeOf(c.nom);
+  let score = Math.round(0.65 * (0.6 * rec + 0.4 * vol) + 0.35 * hype);
+  if (days > 120) score = Math.min(score, 45); else if (days > 60) score = Math.min(score, 59);
+  const lvl = score >= 88 ? ["Très liquide", "a"] : score >= 72 ? ["Liquide", "b"] : score >= 50 ? ["Moyen", "c"] : ["Lent", "d"];
+  return { score, days, hype, label: lvl[0], cls: lvl[1] };
+}
 function researchRows() {
   const note = pref.get("r_note", "10"), min = rNum("r_min", 20), max = rNum("r_max", Infinity), minN = Number(pref.get("r_n", "2")) || 1;
   const ship = rNum("r_ship", 3), comm = rNum("r_comm", 0), extra = (SPEED[pref.get("r_speed", "regular")] || SPEED.regular)[1];
@@ -1224,8 +1253,8 @@ function researchRows() {
     if (q && !norm(c.nom + " " + c.titre_gcc + " " + c.set).includes(q)) return null;
     const fee = cccFee(s.prix).fee + extra, ins = 0.02 * s.prix;
     const cost = c.loose + fee + ins + ship, gain = s.prix * (1 - comm / 100) - cost;
-    return { c, s, fee: fee + ins + ship, gain, roi: gain / cost * 100 };
-  }).filter(Boolean).sort((a, b) => pref.get("r_sort", "roi") === "gain" ? b.gain - a.gain : b.roi - a.roi);
+    return { c, s, fee: fee + ins + ship, gain, roi: gain / cost * 100, liq: liquidity(c, s) };
+  }).filter(Boolean).sort((a, b) => { const k = pref.get("r_sort", "roi"); return k === "liq" ? (b.liq.score - a.liq.score || b.gain - a.gain) : k === "gain" ? b.gain - a.gain : b.roi - a.roi; });
 }
 function renderResearch() {
   const note = pref.get("r_note", "10");
@@ -1237,7 +1266,7 @@ function renderResearch() {
   $("rInfo").textContent = "Relevé du " + fmtDay(research.updated) + " · " + research.cartes.length + " cartes analysées · "
     + rows.length + " correspondent à tes filtres" + (rows.length > shown.length ? " (les 150 meilleures affichées)" : "") + ".";
   if (!rows.length) { box.replaceChildren(el("p", "help", "Aucune carte avec ces filtres : baisse le prix minimum ou le nombre de ventes.")); return; }
-  const cols = [["", ""], ["Carte", ""], ["Loose", "r"], ["CCC " + note, "r"], ["Frais", "r"], ["Gain net", "r"], ["Rendement", "r"]];
+  const cols = [["", ""], ["Carte", ""], ["Loose", "r"], ["CCC " + note, "r"], ["Frais", "r"], ["Gain net", "r"], ["Rendement", "r"], ["Liquidité", "r"]];
   const table = el("table"), head = el("tr"), thead = el("thead"), tbody = el("tbody");
   cols.forEach(([t, k]) => head.append(el("th", k, t)));
   thead.append(head); table.append(thead, tbody);
@@ -1264,7 +1293,10 @@ function renderResearch() {
     const dir = r.gain >= 0 ? "up" : "down";
     const gain = el("td", "r big " + dir); gain.append(el("div", "money", signed(r.gain)));
     const roi = el("td", "r big " + dir); roi.append(el("span", "pill " + dir, signedPct(r.roi)));
-    tr.append(imgCell, info, loose, ccc, moneyTd("− " + fmt(r.fee)), gain, roi);
+    const liq = el("td", "r"), stars = Math.max(1, Math.min(5, Math.round(r.liq.hype / 20)));
+    liq.append(el("span", "pill liq-" + r.liq.cls, r.liq.label),
+      el("div", "meta liqmeta", "score " + r.liq.score + " · hype " + "★".repeat(stars) + "☆".repeat(5 - stars)));
+    tr.append(imgCell, info, loose, ccc, moneyTd("− " + fmt(r.fee)), gain, roi, liq);
     [...tr.children].forEach((td, j) => { if (j > 1 && cols[j][0]) td.dataset.label = cols[j][0]; });
     tbody.append(tr);
   });
