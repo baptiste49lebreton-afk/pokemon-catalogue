@@ -151,6 +151,39 @@ button.ic svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-
 }
 .charthead { flex-wrap:wrap; }
 .chartpanel select { min-width:0; }
+/* ---- téléphone : l'ordinateur n'est pas concerné ---- */
+@media (max-width: 640px) {
+  body { padding-top:16px; }
+  h1 { font-size:1.6rem; }
+  input, select { font-size:16px; }
+  .tiles { gap:8px; }
+  .tile, .tile.small { flex:1 1 140px; padding:12px 14px; }
+  .tile:first-child { flex-basis:100%; }
+  .tile .value { font-size:1.45rem; }
+  .tile.small .value { font-size:1.2rem; }
+  .bar .seg { margin-left:0; }
+  .grid { grid-template-columns:repeat(auto-fit, minmax(min(140px, 100%), 1fr)); }
+  .grid label { min-width:0; }
+  .grid input, .grid select { width:100%; box-sizing:border-box; }
+  .panel { padding:14px 12px; }
+  .simtable { font-size:.8rem; }
+  .simtable th, .simtable td { padding:6px 3px; }
+  .wrap.list { overflow-x:visible; }
+  .wrap.list table, .wrap.list tbody { display:block; }
+  .wrap.list thead tr { display:flex; justify-content:flex-end; }
+  .wrap.list thead th { display:none; border:0; padding:4px 0; }
+  .wrap.list thead th:nth-child(9) { display:flex; align-items:center; gap:8px; }
+  .wrap.list thead th:nth-child(9)::before { content:"Actualiser les prix CCC"; }
+  .wrap.list tbody tr { position:relative; display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px 12px; padding:14px 8px; border-bottom:1px solid var(--line); }
+  .wrap.list td { display:block; border:0; padding:0; text-align:left; white-space:normal; min-width:0 !important; }
+  .wrap.list td.img { position:absolute; top:14px; left:8px; }
+  .wrap.list td:nth-child(2) { grid-column:1 / -1; min-height:78px; padding-left:68px; padding-right:30px; }
+  .wrap.list td.img:empty + td { min-height:0; padding-left:0; }
+  .wrap.list td:empty { display:none; }
+  .wrap.list td:last-child { position:absolute; top:8px; right:0; }
+  .wrap.list td[data-label]::before { content:attr(data-label); display:block; color:var(--muted); font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; }
+  .wrap.list td .meta, .wrap.list td a { white-space:normal !important; }
+}
 [hidden] { display:none !important; }
 </style>
 </head>
@@ -522,9 +555,9 @@ function draw(updated) {
   const cards = state.cards;
   const table = el("table");
   const head = el("tr");
-  [["", ""], ["Élément", ""], ["Payé", "r"], ["Prix actuel", "r"], ["Écart", "r"],
-   ["CCC 10", "r"], ["CCC 9.5", "r"], ["CCC 9", "r"], ["", "ref"], ["Frais CCC", "r"], ["", ""]]
-    .forEach(([t, c]) => { const th = el("th", c === "ref" ? "" : c, t); if (c === "ref") th.append(refreshBtn()); if (t === "Frais CCC") th.title = "Simulation des frais de gradation CCC (formule Regular), selon le prix actuel de la carte : 1 à 50 € = 20 € ; 51 à 100 € = 23 € ; 101 à 500 € = 27 € ; plus de 500 € = 31 €. En option : Express +5 €, Super-Express +20 €, assurance 2 % de la valeur. Tarif relevé sur cccgrading.com le 20/10/2026 : vérifie-le avant d'envoyer tes cartes.";
+  const cols = [["", ""], ["Élément", ""], ["Payé", "r"], ["Prix actuel", "r"], ["Écart", "r"],
+   ["CCC 10", "r"], ["CCC 9.5", "r"], ["CCC 9", "r"], ["", "ref"], ["Frais CCC", "r"], ["", ""]];
+  cols.forEach(([t, c]) => { const th = el("th", c === "ref" ? "" : c, t); if (c === "ref") th.append(refreshBtn()); if (t === "Frais CCC") th.title = "Simulation des frais de gradation CCC (formule Regular), selon le prix actuel de la carte : 1 à 50 € = 20 € ; 51 à 100 € = 23 € ; 101 à 500 € = 27 € ; plus de 500 € = 31 €. En option : Express +5 €, Super-Express +20 €, assurance 2 % de la valeur. Tarif relevé sur cccgrading.com le 20/10/2026 : vérifie-le avant d'envoyer tes cartes.";
       if (t === "Prix actuel") th.title = "Prix Cardmarket mis à jour automatiquement chaque matin. Tu peux le remplacer avec le crayon ✎ : il ne bouge alors plus tout seul. Prix CCC réels : médiane des dernières ventes réussies sur Graded Card Center (en euros), sauf ceux que tu saisis."; head.append(th); });
   const thead = el("thead"); thead.append(head);
   const tbody = el("tbody");
@@ -579,6 +612,8 @@ function draw(updated) {
     if (q > 1 && gain != null) g.append(el("div", "meta", "pour " + q));
     tr.append(imgCell, info, moneyTd(fmt(c.prix_paye)), mk, g,
       cccTd(c, "10", c.ccc10), cccTd(c, "9.5", c.ccc95), cccTd(c, "9", c.ccc9), el("td"), feeTd(c, q), del);
+    // intitulés repris sur téléphone, où le tableau s'affiche en fiches
+    [...tr.children].forEach((td, i) => { if (i > 1 && cols[i][0]) td.dataset.label = cols[i][0]; });
     tbody.append(tr);
   });
 
