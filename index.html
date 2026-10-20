@@ -80,6 +80,9 @@ tbody tr.clk:hover td { background:var(--panel); }
 @keyframes drawline { to { stroke-dashoffset:0; } }
 @keyframes fadein { to { opacity:1; } }
 @media (prefers-reduced-motion: reduce) { .pop, .draw polyline, .draw circle, .draw polygon { animation:none; } .draw polyline { stroke-dashoffset:0; } .draw circle, .draw polygon { opacity:1; } }
+button.spin svg { animation:spin 1s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { button.spin svg { animation:none; } }
 /* ---- nouveau look ---- */
 #wall { position:fixed; inset:0; z-index:-1; display:none; background-size:cover; background-position:center; }
 #wall::after { content:""; position:absolute; inset:0; background:var(--bg); opacity:var(--veil, .55); }
@@ -472,6 +475,25 @@ function cccTd(c, k, val) {
   }
   return td;
 }
+// Bouton « actualiser les prix CCC » (en-tête du tableau) : demande au script de relever les ventes sur GCC.
+function refreshBtn() {
+  const b = el("button", "ghost ic");
+  b.type = "button";
+  b.title = "Actualiser les prix CCC (ventes réussies sur Graded Card Center)";
+  b.setAttribute("aria-label", "Actualiser les prix CCC");
+  b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
+  b.addEventListener("click", ev => { ev.stopPropagation(); refreshCcc(b); });
+  return b;
+}
+async function refreshCcc(btn) {
+  if (state.busy) { setStatus("Une modification est déjà en cours, patiente un instant."); return; }
+  if (!confirm("Actualiser les prix CCC de toutes les cartes depuis Graded Card Center ?\n\nLes prix CCC que tu as saisis à la main seront remplacés quand GCC a une vente récente pour la note (sinon ta valeur est gardée).")) return;
+  const stamp = String(Date.now());
+  btn.disabled = true; btn.classList.add("spin");
+  setStatus("Actualisation des prix CCC demandée…");
+  await change({ action: "refresh_ccc", stamp }, cards => cards, v => !!v && v.ccc_refresh === stamp);
+  if (btn.isConnected) { btn.disabled = false; btn.classList.remove("spin"); }
+}
 function moneyTd(text) { const td = el("td", "r"); td.append(el("div", "money", text)); return td; }
 function gridCard(c, q, gain) {
   const d = el("div", "gcard" + (c.pending ? " pending" : ""));
@@ -501,8 +523,8 @@ function draw(updated) {
   const table = el("table");
   const head = el("tr");
   [["", ""], ["Élément", ""], ["Payé", "r"], ["Prix actuel", "r"], ["Écart", "r"],
-   ["CCC 10 (est.)", "r"], ["CCC 9.5 (est.)", "r"], ["CCC 9 (est.)", "r"], ["Frais CCC", "r"], ["", ""]]
-    .forEach(([t, c]) => { const th = el("th", c, t); if (t === "Frais CCC") th.title = "Simulation des frais de gradation CCC (formule Regular), selon le prix actuel de la carte : 1 à 50 € = 20 € ; 51 à 100 € = 23 € ; 101 à 500 € = 27 € ; plus de 500 € = 31 €. En option : Express +5 €, Super-Express +20 €, assurance 2 % de la valeur. Tarif relevé sur cccgrading.com le 20/10/2026 : vérifie-le avant d'envoyer tes cartes.";
+   ["CCC 10", "r"], ["CCC 9.5", "r"], ["CCC 9", "r"], ["", "ref"], ["Frais CCC", "r"], ["", ""]]
+    .forEach(([t, c]) => { const th = el("th", c === "ref" ? "" : c, t); if (c === "ref") th.append(refreshBtn()); if (t === "Frais CCC") th.title = "Simulation des frais de gradation CCC (formule Regular), selon le prix actuel de la carte : 1 à 50 € = 20 € ; 51 à 100 € = 23 € ; 101 à 500 € = 27 € ; plus de 500 € = 31 €. En option : Express +5 €, Super-Express +20 €, assurance 2 % de la valeur. Tarif relevé sur cccgrading.com le 20/10/2026 : vérifie-le avant d'envoyer tes cartes.";
       if (t === "Prix actuel") th.title = "Prix Cardmarket mis à jour automatiquement chaque matin. Tu peux le remplacer avec le crayon ✎ : il ne bouge alors plus tout seul. Prix CCC réels : médiane des dernières ventes réussies sur Graded Card Center (en euros), sauf ceux que tu saisis."; head.append(th); });
   const thead = el("thead"); thead.append(head);
   const tbody = el("tbody");
@@ -556,7 +578,7 @@ function draw(updated) {
     const g = el("td", "r " + (gain == null ? "" : gain >= 0 ? "up" : "down")); g.append(el("div", "money", signed(gain)));
     if (q > 1 && gain != null) g.append(el("div", "meta", "pour " + q));
     tr.append(imgCell, info, moneyTd(fmt(c.prix_paye)), mk, g,
-      cccTd(c, "10", c.ccc10), cccTd(c, "9.5", c.ccc95), cccTd(c, "9", c.ccc9), feeTd(c, q), del);
+      cccTd(c, "10", c.ccc10), cccTd(c, "9.5", c.ccc95), cccTd(c, "9", c.ccc9), el("td"), feeTd(c, q), del);
     tbody.append(tr);
   });
 
