@@ -44,6 +44,7 @@ API = "https://api.tcgdex.net/v2"
 PRIX_BOOSTER = 5.99
 ITERATIONS = 600_000
 FR_AUTO_JOURS = 14
+FORCE_CCC = False  # vrai quand le site demande « actualiser les prix CCC » : GCC remplace les prix CCC saisis à la main
 
 
 # ---------- chiffrement ----------
@@ -255,6 +256,11 @@ def apply_payload(vault, password):
             break
         else:
             print("Modification : élément introuvable.")
+    elif action == "refresh_ccc":
+        global FORCE_CCC
+        FORCE_CCC = True
+        vault["ccc_refresh"] = str(msg.get("stamp") or "")[:40]
+        print("Actualisation des prix CCC demandée depuis le site.")
     elif action == "set_prix_fr":
         uid = str(msg.get("uid") or "")
         val = _num(msg.get("prix_fr"))
@@ -380,10 +386,14 @@ def main():
             print(f"  GCC indisponible pour {entry['nom']} : {exc}")
         ccc_vals, ccc_auto = {}, []  # ccc_auto reste vide : plus aucune estimation
         for k in gcc_prices.NOTES:
-            if ccc_manual.get(k) is not None:
+            gcc_val = (ccc_gcc.get(k) or {}).get("prix")
+            if FORCE_CCC and gcc_val is not None:
+                ccc_manual.pop(k, None)  # le prix saisi à la main est remplacé par le prix GCC
+                ccc_vals[k] = gcc_val
+            elif ccc_manual.get(k) is not None:
                 ccc_vals[k] = ccc_manual[k]
-            elif (ccc_gcc.get(k) or {}).get("prix") is not None:
-                ccc_vals[k] = ccc_gcc[k]["prix"]
+            elif gcc_val is not None:
+                ccc_vals[k] = gcc_val
             else:
                 ccc_vals[k] = None
         resume = ", ".join(f"{k}={v['prix']} € ({v['n']} ventes)" for k, v in ccc_gcc.items())
