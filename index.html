@@ -152,6 +152,12 @@ button.ic svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-
 .charthead { flex-wrap:wrap; }
 .chartpanel select { min-width:0; }
 .mpen { display:none; }
+.tabs { margin:0 0 14px; }
+.tabs button { padding:7px 16px; }
+body.page-rech .colonly { display:none !important; }
+.rank { color:var(--muted); font-weight:600; margin-right:6px; }
+.rlist .other { margin-top:2px; }
+.rlist td.big { font-weight:700; }
 /* ---- téléphone : l'ordinateur n'est pas concerné ---- */
 @media (max-width: 640px) {
   body { padding-top:16px; }
@@ -186,6 +192,7 @@ button.ic svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-
   .wrap.list td .meta, .wrap.list td a { white-space:normal !important; }
   .wrap.list .cap, .wrap.list .cmlink { display:none !important; }
   .wrap.list .mpen { display:inline-block; padding:2px 8px; margin-left:2px; }
+  .wrap.rlist td:last-child { position:static; }
 }
 [hidden] { display:none !important; }
 </style>
@@ -206,9 +213,10 @@ button.ic svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-
       <button type="button" class="ghost ic" id="btnEye" aria-pressed="false" title="Cacher les montants" aria-label="Cacher ou afficher les montants"></button>
       <button type="button" class="ghost ic" id="btnSet" title="Réglages (thème, fond d'écran)" aria-label="Réglages"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h8M18 6h2M4 12h2M12 12h8M4 18h10M20 18h0"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg></button>
     </div>
-    <div class="tiles" id="totals"></div>
-    <p class="updated" id="updated"></p>
-    <div class="bar">
+    <nav class="seg tabs" id="tabs" aria-label="Pages"><button type="button" data-p="col">Ma collection</button><button type="button" data-p="rech">🔍 Recherche</button></nav>
+    <div class="tiles colonly" id="totals"></div>
+    <p class="updated colonly" id="updated"></p>
+    <div class="bar colonly">
       <button type="button" id="btnAdd">+ Ajouter</button>
       <button type="button" class="ghost" id="btnChart">📈 Évolution</button>
       <button type="button" class="ghost" id="btnMic" hidden>🎤 Dicter</button>
@@ -234,7 +242,7 @@ button.ic svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-
     <p class="err" id="setErr" role="alert"></p>
   </section>
 
-  <form class="panel" id="addPanel" hidden autocomplete="off">
+  <form class="panel colonly" id="addPanel" hidden autocomplete="off">
     <h2>Ajouter</h2>
     <label class="one">Nom de la carte <input id="fNom" required maxlength="120" placeholder="ex. Zekrom ex BWR"></label>
     <p class="help" id="heard" role="status"></p>
@@ -272,7 +280,7 @@ button.ic svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-
     <p class="help" id="tokenState"></p>
   </form>
 
-  <section class="panel chartpanel" id="chartPanel" hidden>
+  <section class="panel chartpanel colonly" id="chartPanel" hidden>
     <div class="charthead"><h2 id="chartTitle">Évolution des prix</h2><select id="chartSel"></select><button type="button" class="ghost" id="chartClose">Masquer</button></div>
     <form class="editform" id="editForm" hidden autocomplete="off">
       <div class="grid">
@@ -314,7 +322,35 @@ button.ic svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-
     </details>
   </aside>
 
-  <div class="wrap" id="list"></div>
+  <div class="wrap colonly" id="list"></div>
+
+  <section id="rechPage" hidden>
+    <div class="panel">
+      <h2>Acheter en loose, faire grader en CCC</h2>
+      <p class="help" style="margin-top:0">Classement des cartes françaises les plus rentables : prix loose Cardmarket (tendance, toutes langues) comparé aux ventes réussies en CCC sur Graded Card Center. Les frais de gradation, d'assurance et d'envoi sont déjà déduits.</p>
+      <div class="setrow"><span class="label">Note visée</span>
+        <div class="seg" id="rNote" role="group" aria-label="Note visée"><button type="button" data-n="10">CCC 10</button><button type="button" data-n="9.5">CCC 9.5</button><button type="button" data-n="9">CCC 9</button></div></div>
+      <div class="setrow"><span class="label">Classer par</span>
+        <div class="seg" id="rSort" role="group" aria-label="Classer par"><button type="button" data-s="roi">Rendement %</button><button type="button" data-s="gain">Gain €</button></div></div>
+      <div class="grid" style="margin-top:12px">
+        <label>Prix loose min (€) <input id="rMin" inputmode="decimal" placeholder="ex. 20"></label>
+        <label>Prix loose max (€) <input id="rMax" inputmode="decimal" placeholder="sans limite"></label>
+        <label>Ventes CCC min <select id="rN"><option value="1">1 vente</option><option value="2">2 ventes</option><option value="3">3 ventes</option></select></label>
+        <label>Nom ou extension <input id="rQ" maxlength="60" placeholder="ex. Dracaufeu"></label>
+      </div>
+      <details class="tv"><summary>Frais pris en compte (modifiables)</summary>
+        <div class="grid" style="margin-top:8px">
+          <label>Envoi + assurance Poste, par carte (€) <input id="rShip" inputmode="decimal"></label>
+          <label>Commission à la revente (%) <input id="rComm" inputmode="decimal"></label>
+          <label>Formule CCC <select id="rSpeed"><option value="regular">Regular (incluse)</option><option value="express">Express (+5 € par carte)</option><option value="super">Super-Express (+20 € par carte)</option></select></label>
+        </div>
+        <p class="help">Par carte : prix loose + gradation CCC (tranche selon la valeur de la carte gradée, plus prudent) + assurance CCC 2 % de cette valeur + ta part d'envoi. Envoie plusieurs cartes dans le même colis pour réduire la part d'envoi. Commission : ce que prend la plateforme quand tu revends (vérifie le tarif GCC).</p>
+      </details>
+    </div>
+    <p class="updated" id="rInfo"></p>
+    <div class="wrap list rlist" id="rList"></div>
+    <p class="help" id="rNote2">À savoir : les ventes GCC sont des cartes françaises, alors que le prix Cardmarket mélange toutes les langues. Le prix CCC retenu est la médiane des 3 dernières ventes de la note (6 derniers mois en priorité). Une carte n'obtient pas toujours la note visée : regarde aussi ce que donnent les notes en dessous.</p>
+  </section>
   <img id="zoom" alt="">
 </main>
 
@@ -367,13 +403,14 @@ const getToken = () => { try { return localStorage.getItem("gh") || ""; } catch 
 const setToken = t => { try { t ? localStorage.setItem("gh", t) : localStorage.removeItem("gh"); } catch (e) {} };
 
 // ---------- lecture / envoi ----------
-async function loadVault() {
+async function loadVault(file) {
+  file = file || "vault.json";
   const token = getToken();
-  const url = token ? API + "/contents/data/vault.json?ref=main" : "data/vault.json";
+  const url = token ? API + "/contents/data/" + file + "?ref=main" : "data/" + file;
   const headers = token ? { Authorization: "Bearer " + token, Accept: "application/vnd.github.raw+json" } : {};
   let r = await fetch(url, { cache: "no-store", headers });
-  if (!r.ok && token) r = await fetch("data/vault.json", { cache: "no-store" });
-  if (!r.ok) throw new Error("vault");
+  if (!r.ok && token) r = await fetch("data/" + file, { cache: "no-store" });
+  if (!r.ok) throw new Error(r.status === 404 ? "absent" : "vault");
   const blob = await r.json();
   try { return await decryptVault(blob, state.password); } catch (e) { throw new Error("password"); }
 }
@@ -466,7 +503,7 @@ const simNum = (k, d) => { const v = parseFloat(String(pref.get(k, "")).replace(
 function renderSim() {
   const box = $("simPanel");
   const c = state.cards.find(x => x.id === chartSel && !x.pending);
-  const show = !!(c && view === "list" && !$("chartPanel").hidden && chartSel !== "all" && c.type !== "scelle" && simClosed !== c.id);
+  const show = !!(c && page === "col" && view === "list" && !$("chartPanel").hidden && chartSel !== "all" && c.type !== "scelle" && simClosed !== c.id);
   document.body.classList.toggle("side-open", show);
   box.hidden = !show;
   if (!show) return;
@@ -1094,6 +1131,80 @@ function editFr(c, mk) {
   });
 }
 
+// ---------- page Recherche : acheter en loose, faire grader en CCC ----------
+let page = "col", research = null, researchErr = "";
+function setPage(p) {
+  page = p === "rech" ? "rech" : "col";
+  document.body.classList.toggle("page-rech", page === "rech");
+  $("rechPage").hidden = page !== "rech";
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.p === page));
+  hideZoom(); renderSim();
+  if (page === "rech") { if (!research && !researchErr) loadResearch(); else renderResearch(); }
+}
+async function loadResearch() {
+  $("rInfo").textContent = "Chargement de la recherche…";
+  try { research = await loadVault("research.json"); researchErr = ""; }
+  catch (e) { researchErr = e.message === "absent" ? "La première recherche sera prête après le relevé automatique de demain matin." : "Recherche indisponible pour le moment."; }
+  renderResearch();
+}
+const rNum = (k, d) => { const v = parseFloat(String(pref.get(k, "")).replace(",", ".")); return isNaN(v) || v < 0 ? d : v; };
+function researchRows() {
+  const note = pref.get("r_note", "10"), min = rNum("r_min", 20), max = rNum("r_max", Infinity), minN = Number(pref.get("r_n", "2")) || 1;
+  const ship = rNum("r_ship", 3), comm = rNum("r_comm", 0), extra = (SPEED[pref.get("r_speed", "regular")] || SPEED.regular)[1];
+  const q = norm(pref.get("r_q", ""));
+  return research.cartes.map(c => {
+    const s = (c.ccc || {})[note];
+    if (!s || c.loose == null || c.loose < min || c.loose > max || s.n < minN) return null;
+    if (q && !norm(c.nom + " " + c.titre_gcc + " " + c.set).includes(q)) return null;
+    const fee = cccFee(s.prix).fee + extra, ins = 0.02 * s.prix;
+    const cost = c.loose + fee + ins + ship, gain = s.prix * (1 - comm / 100) - cost;
+    return { c, s, fee: fee + ins + ship, gain, roi: gain / cost * 100 };
+  }).filter(Boolean).sort((a, b) => pref.get("r_sort", "roi") === "gain" ? b.gain - a.gain : b.roi - a.roi);
+}
+function renderResearch() {
+  const note = pref.get("r_note", "10");
+  document.querySelectorAll("#rNote button").forEach(b => b.classList.toggle("on", b.dataset.n === note));
+  document.querySelectorAll("#rSort button").forEach(b => b.classList.toggle("on", b.dataset.s === pref.get("r_sort", "roi")));
+  const box = $("rList");
+  if (!research) { $("rInfo").textContent = researchErr; box.replaceChildren(); return; }
+  const rows = researchRows(), shown = rows.slice(0, 150);
+  $("rInfo").textContent = "Relevé du " + fmtDay(research.updated) + " · " + research.cartes.length + " cartes analysées · "
+    + rows.length + " correspondent à tes filtres" + (rows.length > shown.length ? " (les 150 meilleures affichées)" : "") + ".";
+  if (!rows.length) { box.replaceChildren(el("p", "help", "Aucune carte avec ces filtres : baisse le prix minimum ou le nombre de ventes.")); return; }
+  const cols = [["", ""], ["Carte", ""], ["Loose", "r"], ["CCC " + note, "r"], ["Frais", "r"], ["Gain net", "r"], ["Rendement", "r"]];
+  const table = el("table"), head = el("tr"), thead = el("thead"), tbody = el("tbody");
+  cols.forEach(([t, k]) => head.append(el("th", k, t)));
+  thead.append(head); table.append(thead, tbody);
+  shown.forEach((r, i) => {
+    const { c, s } = r, tr = el("tr");
+    const imgCell = el("td", "img");
+    if (validImg(c)) {
+      const img = el("img"); img.src = c.image; img.alt = ""; img.loading = "lazy"; img.referrerPolicy = "no-referrer";
+      img.addEventListener("mouseenter", () => showZoom(img, c.image)); img.addEventListener("mouseleave", hideZoom);
+      imgCell.append(img);
+    }
+    const info = el("td"), name = el("div", "name");
+    name.append(el("span", "rank", "#" + (i + 1)), c.nom);
+    const others = ["10", "9.5", "9"].filter(n => n !== note && c.ccc[n]).map(n => "CCC " + n + " ≈ " + fmt(c.ccc[n].prix)).join(" · ");
+    info.append(name, el("div", "meta", [c.set, c.numero, c.annee].filter(Boolean).join(" · ")));
+    if (others) info.append(el("div", "meta other", "Autres notes : " + others));
+    const loose = moneyTd(fmt(c.loose));
+    if (c.cm_id) {
+      const a = el("a", "meta", "Cardmarket ↗"); a.href = cmLink(c); a.target = "_blank"; a.rel = "noopener noreferrer";
+      a.style.cssText = "display:block; color:var(--muted); text-decoration:underline"; loose.append(a);
+    }
+    const ccc = moneyTd(fmt(s.prix));
+    ccc.append(el("div", "meta", s.n + " vente" + (s.n > 1 ? "s" : "") + " · " + new Date(s.derniere + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "2-digit" })));
+    const dir = r.gain >= 0 ? "up" : "down";
+    const gain = el("td", "r big " + dir); gain.append(el("div", "money", signed(r.gain)));
+    const roi = el("td", "r big " + dir); roi.append(el("span", "pill " + dir, signedPct(r.roi)));
+    tr.append(imgCell, info, loose, ccc, moneyTd("− " + fmt(r.fee)), gain, roi);
+    [...tr.children].forEach((td, j) => { if (j > 1 && cols[j][0]) td.dataset.label = cols[j][0]; });
+    tbody.append(tr);
+  });
+  box.replaceChildren(table);
+}
+
 function openToken() {
   $("tokenPanel").hidden = false;
   $("tokenState").textContent = getToken() ? "Un jeton est enregistré dans ce navigateur." : "Aucun jeton enregistré.";
@@ -1107,6 +1218,7 @@ async function unlock(password) {
   state.vault = v; state.cards = v.cards.cards;
   draw(v.cards.updated);
   $("login").hidden = true; $("app").hidden = false;
+  setPage(location.hash === "#recherche" ? "rech" : "col");
 }
 
 $("login").addEventListener("submit", async ev => {
@@ -1227,6 +1339,15 @@ document.querySelectorAll("[data-reset]").forEach(b => b.addEventListener("click
 $("veil").addEventListener("input", () => { applyVeil(Number($("veil").value)); pref.set("veil", $("veil").value); });
 $("viewSeg").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; view = b.dataset.v === "list" ? "list" : "grid"; pref.set("view", view); hideZoom(); draw(); });
 $("ranges").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; chartRange = b.dataset.r; renderChart(); });
+$("tabs").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return;
+  history.replaceState(null, "", b.dataset.p === "rech" ? "#recherche" : location.pathname + location.search); setPage(b.dataset.p); });
+window.addEventListener("hashchange", () => { if (state.password) setPage(location.hash === "#recherche" ? "rech" : "col"); });
+[["rMin", "r_min", "20"], ["rMax", "r_max", ""], ["rQ", "r_q", ""], ["rShip", "r_ship", "3"], ["rComm", "r_comm", "0"]].forEach(([id, k, d]) => {
+  $(id).value = pref.get(k, d); $(id).addEventListener("input", () => { pref.set(k, $(id).value); renderResearch(); }); });
+[["rN", "r_n", "2"], ["rSpeed", "r_speed", "regular"]].forEach(([id, k, d]) => {
+  $(id).value = pref.get(k, d); $(id).addEventListener("change", () => { pref.set(k, $(id).value); renderResearch(); }); });
+$("rNote").addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) { pref.set("r_note", b.dataset.n); renderResearch(); } });
+$("rSort").addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) { pref.set("r_sort", b.dataset.s); renderResearch(); } });
 if (SR) { $("btnMic").hidden = false; $("fMic").hidden = false; $("micNote").hidden = false; }
 $("btnMic").addEventListener("click", dictate);
 $("fMic").addEventListener("click", dictate);
