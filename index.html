@@ -369,8 +369,10 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
       <div class="setrow"><span class="label">Classer par</span>
         <div class="seg" id="rSort" role="group" aria-label="Classer par"><button type="button" data-s="roi">Rendement %</button><button type="button" data-s="gain">Gain €</button><button type="button" data-s="liq">Liquidité</button></div></div>
       <div class="grid" style="margin-top:12px">
-        <label>Prix loose min (€) <input id="rMin" inputmode="decimal" placeholder="ex. 5"></label>
-        <label>Prix loose max (€) <input id="rMax" inputmode="decimal" placeholder="sans limite"></label>
+        <label>Prix loose min <select id="rMin"><option value="0">Aucun minimum</option><option value="1">1 €</option><option value="2">2 €</option><option value="5">5 €</option><option value="10">10 €</option><option value="20">20 €</option><option value="50">50 €</option><option value="100">100 €</option><option value="200">200 €</option><option value="500">500 €</option></select></label>
+        <label>Prix loose max <select id="rMax"><option value="">Sans limite</option><option value="10">10 €</option><option value="20">20 €</option><option value="50">50 €</option><option value="100">100 €</option><option value="200">200 €</option><option value="500">500 €</option><option value="1000">1000 €</option><option value="2000">2000 €</option></select></label>
+<label>Rendement min <select id="rRoi"><option value="">Tous</option><option value="0">Rentable (0 % et +)</option><option value="25">25 % et +</option><option value="50">50 % et +</option><option value="100">100 % et +</option><option value="200">200 % et +</option><option value="500">500 % et +</option></select></label>
+<label>Gain net min <select id="rGain"><option value="">Tous</option><option value="0">Positif (0 € et +)</option><option value="10">10 € et +</option><option value="25">25 € et +</option><option value="50">50 € et +</option><option value="100">100 € et +</option><option value="250">250 € et +</option><option value="500">500 € et +</option></select></label>
         <label>Ventes CCC min <select id="rN"><option value="1">1 vente</option><option value="2">2 ventes</option><option value="3">3 ventes</option></select></label>
         <label>Nom ou extension <input id="rQ" maxlength="60" placeholder="ex. Dracaufeu"></label>
       </div>
@@ -388,7 +390,8 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
     <p class="help" id="rNote2">À savoir : les ventes GCC sont des cartes françaises, alors que le prix Cardmarket mélange toutes les langues. Le prix CCC retenu est la médiane des 3 dernières ventes de la note (6 derniers mois en priorité). Une carte n'obtient pas toujours la note visée : regarde aussi ce que donnent les notes en dessous.</p>
     <p class="help" id="rLiq2">Liquidité (sur 100) : 65 % l'activité des ventes CCC de la note visée (date de la dernière vente et nombre de ventes récentes), 35 % la hype du Pokémon (estimation de sa popularité auprès des collectionneurs, étoiles de 1 à 5). Sans vente depuis plus de 60 jours, une carte ne passe jamais « Liquide » (et reste « Lent » après 4 mois), même très populaire. C'est un indicateur, pas une garantie de revente.</p>
   </section>
-  <img id="zoom" alt="">
+  <section id="fichePage" hidden></section>
+<img id="zoom" alt="">
 </main>
 
 <script>
@@ -1218,12 +1221,12 @@ function editFr(c, mk) {
 // ---------- page Recherche : acheter en loose, faire grader en CCC ----------
 let page = "col", research = null, researchErr = "";
 function setPage(p) {
-  page = p === "rech" ? "rech" : "col";
-  document.body.classList.toggle("page-rech", page === "rech");
-  $("rechPage").hidden = page !== "rech";
+  page = p === "rech" || p === "fiche" ? p : "col";
+  document.body.classList.toggle("page-rech", page !== "col");
+  $("rechPage").hidden = page !== "rech"; $("fichePage").hidden = page !== "fiche";
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.p === page));
   hideZoom(); renderSim();
-  if (page === "rech") { if (!research && !researchErr) loadResearch(); else renderResearch(); }
+  if (page !== "col") { if (!research && !researchErr) loadResearch(); else renderResearch(); }
 }
 async function loadResearch() {
   $("rInfo").textContent = "Chargement de la recherche…";
@@ -1259,6 +1262,38 @@ function liquidity(c, s) {
   return { score, days, hype, label: lvl[0], cls: lvl[1] };
 }
 // ---------- recherche d'une carte : fiche de statistiques ----------
+// ---------- fiche d’une carte (nouvel onglet) : recherche pré-remplie sur Vinted / eBay / Cardmarket ----------
+const FICHE_KEY = new URLSearchParams(location.search).get("carte") || "";
+const SHOP_VINTED_STATES = [6, 1, 2, 3]; // Vinted : neuf avec étiquette, neuf sans étiquette, très bon état, bon état
+const SHOP_CM_MIN_CONDITION = 4; // Cardmarket : 2 = Near Mint, 3 = Excellent, 4 = Bon (GD) ou mieux
+const cardKey = c => c.cm_id ? "cm" + c.cm_id : norm([c.nom, c.set, c.numero].join(" ")).replace(/ /g, "-");
+function openFiche(c) { window.open(location.pathname + "?carte=" + encodeURIComponent(cardKey(c)) + "#fiche", "_blank"); }
+function shopQuery(c) { return [String(c.nom).replace(/-/g, " "), String(c.numero || "").replace(/\/.*$/, "")].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(); }
+function shopUrl(site, c) {
+const q = encodeURIComponent(shopQuery(c));
+if (site === "vinted") return "https://www.vinted.fr/catalog?search_text=" + q + SHOP_VINTED_STATES.map(s => "&status_ids[]=" + s).join("");
+if (site === "ebay") return "https://www.ebay.fr/sch/i.html?_nkw=" + q + "&LH_BIN=1&_sop=15";
+if (site === "cardmarket") return c.cm_id ? cmLink(c) + "&language=2&minCondition=" + SHOP_CM_MIN_CONDITION : "https://www.cardmarket.com/fr/Pokemon/Products/Search?searchString=" + q;
+return "";
+}
+function renderFichePage() {
+const box = $("fichePage");
+if (!research) { box.replaceChildren(el("p", "help", researchErr || "Chargement de la fiche…")); return; }
+const c = research.cartes.find(x => cardKey(x) === FICHE_KEY);
+if (!c) { box.replaceChildren(el("p", "help", "Carte introuvable dans le relevé du jour. Reviens à la recherche et clique de nouveau sur la carte.")); return; }
+document.title = c.nom + " · " + (c.set || "");
+const panel = el("div", "panel"), top = el("div", "charthead"), close = el("button", "ghost", "Fermer l’onglet");
+close.type = "button"; close.addEventListener("click", () => { window.close(); });
+top.append(el("h2", "", "Fiche de la carte"), close);
+const bar = el("div", "setrow"), sel = el("select");
+sel.setAttribute("aria-label", "Chercher cette carte sur un site d’achat");
+[["", "Acheter sur…"], ["vinted", "Vinted"], ["ebay", "eBay"], ["cardmarket", "Cardmarket"]].forEach(o => sel.append(new Option(o[1], o[0])));
+sel.addEventListener("change", () => { const u = shopUrl(sel.value, c); sel.value = ""; if (u) window.open(u, "_blank", "noopener"); });
+bar.append(el("span", "label", "Chercher cette carte"), sel);
+const help = el("p", "help", "La recherche « " + shopQuery(c) + " » s’ouvre dans un nouvel onglet, et tu achètes sur le site choisi. Vinted : bon état ou mieux (pas de filtre de langue, regarde les photos). eBay : achat immédiat, du moins cher au plus cher. Cardmarket : cartes en français, bon état ou mieux.");
+panel.append(top, bar, help, drawFiche(c));
+box.replaceChildren(panel);
+}
 let cardSel = null, cardShown = [];
 function cardCalc(c, s) {
   const ship = rNum("r_ship", 3), comm = rNum("r_comm", 0), extra = (SPEED[pref.get("r_speed", "regular")] || SPEED.regular)[1];
@@ -1318,7 +1353,7 @@ function renderCardSearch() {
   fiche.replaceChildren(...(cardSel ? [drawFiche(cardSel)] : []));
 }
 function researchRows() {
-  const note = pref.get("r_note", "10"), min = rNum("r_min", 5), max = rNum("r_max", Infinity), minN = Number(pref.get("r_n", "1")) || 1;
+  const note = pref.get("r_note", "10"), min = rNum("r_min", 5), max = rNum("r_max", Infinity), minN = Number(pref.get("r_n", "1")) || 1, minRoi = rNum("r_roi", -Infinity), minGain = rNum("r_gain", -Infinity);
   const ship = rNum("r_ship", 3), comm = rNum("r_comm", 0), extra = (SPEED[pref.get("r_speed", "regular")] || SPEED.regular)[1];
   const q = norm(pref.get("r_q", ""));
   return research.cartes.map(c => {
@@ -1327,10 +1362,11 @@ function researchRows() {
     if (q && !norm(c.nom + " " + c.titre_gcc + " " + c.set).includes(q)) return null;
     const fee = cccFee(s.prix).fee + extra, ins = 0.02 * s.prix;
     const cost = c.loose + fee + ins + ship, gain = s.prix * (1 - comm / 100) - cost;
-    return { c, s, fee: fee + ins + ship, gain, roi: gain / cost * 100, liq: liquidity(c, s) };
+    const roi = gain / cost * 100; if (roi < minRoi || gain < minGain) return null; return { c, s, fee: fee + ins + ship, gain, roi, liq: liquidity(c, s) };
   }).filter(Boolean).sort((a, b) => { const k = pref.get("r_sort", "roi"); return k === "liq" ? (b.liq.score - a.liq.score || b.gain - a.gain) : k === "gain" ? b.gain - a.gain : b.roi - a.roi; });
 }
 function renderResearch() {
+if (page === "fiche") { renderFichePage(); return; }
   const note = pref.get("r_note", "10");
   document.querySelectorAll("#rNote button").forEach(b => b.classList.toggle("on", b.dataset.n === note));
   document.querySelectorAll("#rSort button").forEach(b => b.classList.toggle("on", b.dataset.s === pref.get("r_sort", "roi")));
@@ -1340,7 +1376,7 @@ function renderResearch() {
   const rows = researchRows(), shown = rows.slice(0, 400);
   $("rInfo").textContent = "Relevé du " + fmtDay(research.updated) + " · " + research.cartes.length + " cartes analysées · "
     + rows.length + " correspondent à tes filtres" + (rows.length > shown.length ? " (les 400 meilleures affichées)" : "") + ".";
-  if (!rows.length) { box.replaceChildren(el("p", "help", "Aucune carte avec ces filtres : baisse le prix minimum ou le nombre de ventes.")); return; }
+  if (!rows.length) { box.replaceChildren(el("p", "help", "Aucune carte avec ces filtres : assouplis un filtre (prix, rendement, gain ou nombre de ventes).")); return; }
   const cols = [["", ""], ["Carte", ""], ["Loose", "r"], ["CCC " + note, "r"], ["Frais", "r"], ["Gain net", "r"], ["Rendement", "r"], ["Liquidité", "r"]];
   const table = el("table"), head = el("tr"), thead = el("thead"), tbody = el("tbody");
   cols.forEach(([t, k]) => head.append(el("th", k, t)));
@@ -1372,6 +1408,9 @@ function renderResearch() {
     liq.append(el("span", "pill liq-" + r.liq.cls, r.liq.label),
       el("div", "meta liqmeta", "score " + r.liq.score + " · hype " + "★".repeat(stars) + "☆".repeat(5 - stars)));
     tr.append(imgCell, info, loose, ccc, moneyTd("− " + fmt(r.fee)), gain, roi, liq);
+tr.classList.add("clk"); tr.tabIndex = 0; tr.title = "Ouvrir la fiche de la carte dans un nouvel onglet";
+tr.addEventListener("click", ev => { if (!ev.target.closest("a, button")) openFiche(c); });
+tr.addEventListener("keydown", ev => { if (ev.key === "Enter" && ev.target === tr) openFiche(c); });
     [...tr.children].forEach((td, j) => { if (j > 1 && cols[j][0]) td.dataset.label = cols[j][0]; });
     tbody.append(tr);
   });
@@ -1464,6 +1503,7 @@ async function unlock(password, user) {
   state.vault = v; state.cards = v.cards.cards;
   draw(v.cards.updated);
   $("login").hidden = true; $("app").hidden = false;
+if (FICHE_KEY) { setPage("fiche"); return; }
   setPage(location.hash === "#recherche" ? "rech" : "col");
 }
 
@@ -1598,9 +1638,12 @@ $("ranges").addEventListener("click", ev => { const b = ev.target.closest("butto
 $("tabs").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return;
   history.replaceState(null, "", b.dataset.p === "rech" ? "#recherche" : location.pathname + location.search); setPage(b.dataset.p); });
 window.addEventListener("hashchange", () => { if (state.password) setPage(location.hash === "#recherche" ? "rech" : "col"); });
-[["rMin", "r_min", "5"], ["rMax", "r_max", ""], ["rQ", "r_q", ""], ["rShip", "r_ship", "3"], ["rComm", "r_comm", "0"]].forEach(([id, k, d]) => {
+[["rQ", "r_q", ""], ["rShip", "r_ship", "3"], ["rComm", "r_comm", "0"]].forEach(([id, k, d]) => {
   $(id).value = pref.get(k, d); $(id).addEventListener("input", () => { pref.set(k, $(id).value); renderResearch(); }); });
-[["rN", "r_n", "1"], ["rSpeed", "r_speed", "regular"]].forEach(([id, k, d]) => {
+[["rMin", "r_min", "5"], ["rMax", "r_max", ""], ["rRoi", "r_roi", ""], ["rGain", "r_gain", ""], ["rN", "r_n", "1"], ["rSpeed", "r_speed", "regular"]].forEach(([id, k, d]) => {
+const s = $(id), v0 = pref.get(k, d);
+if (id === "rMin" && v0 === "") pref.set(k, "0");
+else if (["rMin", "rMax", "rRoi", "rGain"].includes(id) && v0 !== "" && ![...s.options].some(o => o.value === v0)) s.add(new Option(String(v0).replace(".", ",") + (id === "rRoi" ? " %" : " €"), v0));
   $(id).value = pref.get(k, d); $(id).addEventListener("change", () => { pref.set(k, $(id).value); renderResearch(); }); });
 $("rNote").addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) { pref.set("r_note", b.dataset.n); renderResearch(); } });
 $("cQ").addEventListener("input", renderCardSearch);
