@@ -30,9 +30,9 @@ import update_prices  # chiffrement et accès TCGdex déjà utilisés pour le co
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "data" / "research.json"
 PAUSE_S = 2            # politesse envers GCC : 2 s entre deux pages
-PRIX_MIN, PRIX_MAX = 15, 6000   # tranches de prix de vente CCC parcourues (€)
-PAS = 1.05             # chaque tranche couvre +5 % : environ 110 pages par note
-AFFINAGE_MAX = 250     # nombre de cartes dont on relit toutes les ventes
+PRIX_MIN, PRIX_MAX = 8, 6000    # tranches de prix de vente CCC parcourues (€)
+PAS = 1.035            # chaque tranche couvre +3,5 % : environ 190 pages par note
+AFFINAGE_MAX = 450     # nombre de cartes dont on relit toutes les ventes
 LOOSE_MIN = 3          # en dessous, la carte ne vaut pas le coût de gradation
 
 _VENTE = re.compile(
