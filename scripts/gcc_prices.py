@@ -94,7 +94,10 @@ def prix_ccc(ventes, aujourdhui=None):
         v = v[-MAX_VENTES:]
         if v:
             out[note] = {"prix": round(statistics.median(p for _, p in v), 2),
-                         "n": len(v), "derniere": v[-1][0].isoformat()}
+                         "n": len(v), "derniere": v[-1][0].isoformat(),
+                         # volume réel (toutes ventes connues de la note) : sert au score de liquidité du site
+                         "v30": sum(1 for j, _ in toutes if j >= aujourdhui - timedelta(days=30)),
+                         "v90": sum(1 for j, _ in toutes if j >= aujourdhui - timedelta(days=90))}
     return out
 
 
