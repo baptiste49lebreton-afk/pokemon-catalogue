@@ -151,6 +151,7 @@ button.ic svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-
 }
 .charthead { flex-wrap:wrap; }
 .chartpanel select { min-width:0; }
+.mpen { display:none; }
 /* ---- téléphone : l'ordinateur n'est pas concerné ---- */
 @media (max-width: 640px) {
   body { padding-top:16px; }
@@ -183,6 +184,8 @@ button.ic svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-
   .wrap.list td:last-child { position:absolute; top:8px; right:0; }
   .wrap.list td[data-label]::before { content:attr(data-label); display:block; color:var(--muted); font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; }
   .wrap.list td .meta, .wrap.list td a { white-space:normal !important; }
+  .wrap.list .cap, .wrap.list .cmlink { display:none !important; }
+  .wrap.list .mpen { display:inline-block; padding:2px 8px; margin-left:2px; }
 }
 [hidden] { display:none !important; }
 </style>
@@ -588,12 +591,19 @@ function draw(updated) {
       del.append(b);
     }
     const mk = el("td", "r");
-    mk.append(el("div", "money", fmt(c.prix_marche)));
+    const pr = el("div"); pr.append(el("span", "money", fmt(c.prix_marche)));
+    if (c.uid && !c.pending && c.type !== "scelle") {
+      // téléphone : un seul crayon à côté du prix, qui ouvre la fiche de modification (avec le lien Cardmarket)
+      const b = el("button", "x mpen", "✎"); b.type = "button"; b.title = "Modifier"; b.setAttribute("aria-label", "Modifier " + c.nom);
+      b.addEventListener("click", () => openChart(c.id, true));
+      pr.append(b);
+    }
+    mk.append(pr);
     const cap = c.source === "manuel" ? "prix saisi"
       : c.source === "fr" ? "prix relevé"
       : c.prix_marche != null && c.type !== "scelle" ? "auto · Cardmarket" : "";
     if (cap) {
-      const m = el("div", "meta", cap); m.style.whiteSpace = "nowrap";
+      const m = el("div", "meta cap", cap); m.style.whiteSpace = "nowrap";
       if (c.uid && !c.pending && c.type !== "scelle") {
         const b = el("button", "x", "✎"); b.type = "button"; b.title = "Saisir le prix actuel à la main"; b.setAttribute("aria-label", "Saisir le prix actuel de " + c.nom);
         b.addEventListener("click", () => editFr(c, mk));
@@ -602,7 +612,7 @@ function draw(updated) {
       mk.append(m);
     }
     if (c.type !== "scelle" && !c.pending && c.cm_id) {
-      const a = el("a", "meta", "voir sur Cardmarket ↗");
+      const a = el("a", "meta cmlink", "voir sur Cardmarket ↗");
       a.href = cmLink(c);
       a.target = "_blank"; a.rel = "noopener noreferrer"; a.style.cssText = "display:block; white-space:nowrap; color:var(--muted); text-decoration:underline";
       a.title = "Ouvre la page Cardmarket de cette carte";
