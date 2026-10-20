@@ -369,7 +369,7 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
       <div class="setrow"><span class="label">Classer par</span>
         <div class="seg" id="rSort" role="group" aria-label="Classer par"><button type="button" data-s="roi">Rendement %</button><button type="button" data-s="gain">Gain €</button><button type="button" data-s="liq">Liquidité</button></div></div>
       <div class="grid" style="margin-top:12px">
-        <label>Prix loose min (€) <input id="rMin" inputmode="decimal" placeholder="ex. 20"></label>
+        <label>Prix loose min (€) <input id="rMin" inputmode="decimal" placeholder="ex. 5"></label>
         <label>Prix loose max (€) <input id="rMax" inputmode="decimal" placeholder="sans limite"></label>
         <label>Ventes CCC min <select id="rN"><option value="1">1 vente</option><option value="2">2 ventes</option><option value="3">3 ventes</option></select></label>
         <label>Nom ou extension <input id="rQ" maxlength="60" placeholder="ex. Dracaufeu"></label>
@@ -1318,7 +1318,7 @@ function renderCardSearch() {
   fiche.replaceChildren(...(cardSel ? [drawFiche(cardSel)] : []));
 }
 function researchRows() {
-  const note = pref.get("r_note", "10"), min = rNum("r_min", 20), max = rNum("r_max", Infinity), minN = Number(pref.get("r_n", "2")) || 1;
+  const note = pref.get("r_note", "10"), min = rNum("r_min", 5), max = rNum("r_max", Infinity), minN = Number(pref.get("r_n", "1")) || 1;
   const ship = rNum("r_ship", 3), comm = rNum("r_comm", 0), extra = (SPEED[pref.get("r_speed", "regular")] || SPEED.regular)[1];
   const q = norm(pref.get("r_q", ""));
   return research.cartes.map(c => {
@@ -1337,9 +1337,9 @@ function renderResearch() {
   const box = $("rList");
   renderCardSearch();
   if (!research) { $("rInfo").textContent = researchErr; box.replaceChildren(); return; }
-  const rows = researchRows(), shown = rows.slice(0, 150);
+  const rows = researchRows(), shown = rows.slice(0, 400);
   $("rInfo").textContent = "Relevé du " + fmtDay(research.updated) + " · " + research.cartes.length + " cartes analysées · "
-    + rows.length + " correspondent à tes filtres" + (rows.length > shown.length ? " (les 150 meilleures affichées)" : "") + ".";
+    + rows.length + " correspondent à tes filtres" + (rows.length > shown.length ? " (les 400 meilleures affichées)" : "") + ".";
   if (!rows.length) { box.replaceChildren(el("p", "help", "Aucune carte avec ces filtres : baisse le prix minimum ou le nombre de ventes.")); return; }
   const cols = [["", ""], ["Carte", ""], ["Loose", "r"], ["CCC " + note, "r"], ["Frais", "r"], ["Gain net", "r"], ["Rendement", "r"], ["Liquidité", "r"]];
   const table = el("table"), head = el("tr"), thead = el("thead"), tbody = el("tbody");
@@ -1598,9 +1598,9 @@ $("ranges").addEventListener("click", ev => { const b = ev.target.closest("butto
 $("tabs").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return;
   history.replaceState(null, "", b.dataset.p === "rech" ? "#recherche" : location.pathname + location.search); setPage(b.dataset.p); });
 window.addEventListener("hashchange", () => { if (state.password) setPage(location.hash === "#recherche" ? "rech" : "col"); });
-[["rMin", "r_min", "20"], ["rMax", "r_max", ""], ["rQ", "r_q", ""], ["rShip", "r_ship", "3"], ["rComm", "r_comm", "0"]].forEach(([id, k, d]) => {
+[["rMin", "r_min", "5"], ["rMax", "r_max", ""], ["rQ", "r_q", ""], ["rShip", "r_ship", "3"], ["rComm", "r_comm", "0"]].forEach(([id, k, d]) => {
   $(id).value = pref.get(k, d); $(id).addEventListener("input", () => { pref.set(k, $(id).value); renderResearch(); }); });
-[["rN", "r_n", "2"], ["rSpeed", "r_speed", "regular"]].forEach(([id, k, d]) => {
+[["rN", "r_n", "1"], ["rSpeed", "r_speed", "regular"]].forEach(([id, k, d]) => {
   $(id).value = pref.get(k, d); $(id).addEventListener("change", () => { pref.set(k, $(id).value); renderResearch(); }); });
 $("rNote").addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) { pref.set("r_note", b.dataset.n); renderResearch(); } });
 $("cQ").addEventListener("input", renderCardSearch);
