@@ -17,6 +17,11 @@ Le site peut envoyer un message chiffré (variable PAYLOAD) pour ajouter ou supp
 un élément : {"action": "add", "entry": {...}} ou {"action": "delete", "uid": "..."}.
 Un message qui ne se déchiffre pas avec le mot de passe est ignoré.
 
+Comptes invités (lecture seule) : data/keyring.json contient le sel fixe du coffre (la clé de lecture
+dérivée du mot de passe ne change donc pas d'une mise à jour à l'autre) et, pour chaque invité, cette
+clé chiffrée avec son propre mot de passe. Il est entièrement calculé par le navigateur du propriétaire
+et envoyé par un message chiffré {"action": "set_keyring", ...} ; ce script ne fait que le vérifier.
+
 Première exécution : si le coffre n'existe pas, il est créé à partir des anciens
 fichiers en clair (data/watchlist.json, data/history.json).
 """
@@ -40,6 +45,9 @@ import gcc_prices  # prix CCC réels relevés sur Graded Card Center (scripts/gc
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 VAULT = DATA / "vault.json"
+KEYRING = DATA / "keyring.json"
+RESEARCH = DATA / "research.json"
+MAX_INVITES = 20
 API = "https://api.tcgdex.net/v2"
 PRIX_BOOSTER = 5.99
 ITERATIONS = 600_000
@@ -53,8 +61,16 @@ def _derive(password, salt, iterations):
     return kdf.derive(password.encode("utf-8"))
 
 
+def keyring_salt():
+    """Sel fixe du coffre (data/keyring.json), ou None si les comptes invités ne sont pas encore en place."""
+    try:
+        return base64.b64decode(json.loads(KEYRING.read_text(encoding="utf-8"))["salt"], validate=True)
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 def encrypt(obj, password):
-    salt, iv = os.urandom(16), os.urandom(12)
+    salt, iv = keyring_salt() or os.urandom(16), os.urandom(12)
     plain = json.dumps(obj, ensure_ascii=False).encode("utf-8")
     ct = AESGCM(_derive(password, salt, ITERATIONS)).encrypt(iv, plain, None)
     b64 = lambda b: base64.b64encode(b).decode("ascii")
@@ -198,6 +214,54 @@ def clean_entry(raw):
     return ensure_uid(e)
 
 
+def _b64(v, n_min, n_max):
+    try:
+        return isinstance(v, str) and len(v) <= 1024 and n_min <= len(base64.b64decode(v, validate=True)) <= n_max
+    except ValueError:
+        return False
+
+
+def _boite(v):
+    """Morceau chiffré AES-GCM {iv, data} produit par le site."""
+    return isinstance(v, dict) and set(v) == {"iv", "data"} and _b64(v["iv"], 12, 12) and _b64(v["data"], 16, 600)
+
+
+def clean_keyring(raw):
+    """Vérifie strictement le trousseau envoyé par le site. Retourne None s'il est invalide."""
+    if not isinstance(raw, dict) or not _b64(raw.get("salt"), 16, 16):
+        return None
+    comptes = raw.get("accounts")
+    if not isinstance(comptes, list) or len(comptes) > MAX_INVITES:
+        return None
+    propres, ids = [], set()
+    for c in comptes:
+        if not isinstance(c, dict) or set(c) != {"id", "salt", "iter", "wrap", "kwrap", "owner", "name"}:
+            return None
+        cid = c["id"]
+        if not (isinstance(cid, str) and len(cid) == 64 and all(x in "0123456789abcdef" for x in cid)) or cid in ids:
+            return None
+        if not _b64(c["salt"], 16, 16) or not isinstance(c["iter"], int) or not (100_000 <= c["iter"] <= 2_000_000):
+            return None
+        if not all(_boite(c[k]) for k in ("wrap", "kwrap", "owner", "name")):
+            return None
+        ids.add(cid)
+        propres.append({k: c[k] for k in ("id", "salt", "iter", "wrap", "kwrap", "owner", "name")})
+    return {"v": 1, "salt": raw["salt"], "iter": ITERATIONS, "accounts": propres}
+
+
+def set_keyring(kr, password):
+    """Enregistre le trousseau. Si le sel change (invité supprimé), la recherche est rechiffrée avec la nouvelle clé."""
+    ancien = keyring_salt()
+    DATA.mkdir(exist_ok=True)
+    KEYRING.write_text(json.dumps(kr, indent=1), encoding="utf-8")
+    if ancien != base64.b64decode(kr["salt"]) and RESEARCH.exists():
+        try:
+            data = decrypt(json.loads(RESEARCH.read_text(encoding="utf-8")), password)
+            RESEARCH.write_text(json.dumps(encrypt(data, password)), encoding="utf-8")
+        except (InvalidTag, ValueError, KeyError, TypeError):
+            print("Recherche non rechiffrée : elle le sera au prochain relevé.")
+
+
 def apply_payload(vault, password):
     raw = os.environ.get("PAYLOAD", "").strip()
     if not raw:
@@ -256,6 +320,14 @@ def apply_payload(vault, password):
             break
         else:
             print("Modification : élément introuvable.")
+    elif action == "set_keyring":
+        kr = clean_keyring(msg.get("keyring"))
+        if not kr:
+            print("Comptes invités : trousseau refusé (format invalide).")
+            return
+        set_keyring(kr, password)
+        vault["keyring_stamp"] = str(msg.get("stamp") or "")[:40]
+        print(f"Comptes invités enregistrés : {len(kr['accounts'])} compte(s).")
     elif action == "refresh_ccc":
         global FORCE_CCC
         FORCE_CCC = True

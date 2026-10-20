@@ -155,6 +155,10 @@ button.ic svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-
 .tabs { margin:0 0 14px; }
 .tabs button { padding:7px 16px; }
 body.page-rech .colonly { display:none !important; }
+body.guest .ownonly, body.guest #btnAdd, body.guest #btnMic, body.guest .gdel, body.guest button.x, body.guest .mpen,
+body.guest #editForm, body.guest thead button.ic { display:none !important; }
+.guestbadge { display:inline-block; margin-left:8px; font-size:.75rem; font-weight:600; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:2px 10px; vertical-align:middle; }
+.acct { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 0; border-bottom:1px solid var(--line); }
 .rank { color:var(--muted); font-weight:600; margin-right:6px; }
 .rlist .other { margin-top:2px; }
 .rlist td.big { font-weight:700; }
@@ -198,18 +202,20 @@ body.page-rech .colonly { display:none !important; }
 </style>
 </head>
 <body>
-<form class="login" id="login" autocomplete="off">
+<form class="login" id="login" action="#" method="post">
   <h1>Collection</h1>
-  <input type="password" id="pw" placeholder="Mot de passe" autocomplete="current-password" required>
+  <input type="text" id="user" name="username" placeholder="Identifiant" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="40">
+  <input type="password" id="pw" name="password" placeholder="Mot de passe" autocomplete="current-password" required>
   <button type="submit" id="go">Déverrouiller</button>
   <p class="err" id="err" role="alert"></p>
+  <p class="help">Ton navigateur peut enregistrer l'identifiant et le mot de passe pour les pré-remplir la prochaine fois. Compte principal : mets l'identifiant que tu veux.</p>
 </form>
 
 <div id="wall"></div>
 <main id="app" hidden>
   <header>
     <div class="top">
-      <h1>Collection Pokémon</h1>
+      <h1>Collection Pokémon<span class="guestbadge" id="guestBadge" hidden>invité · lecture seule</span></h1>
       <button type="button" class="ghost ic" id="btnEye" aria-pressed="false" title="Cacher les montants" aria-label="Cacher ou afficher les montants"></button>
       <button type="button" class="ghost ic" id="btnSet" title="Réglages (thème, fond d'écran)" aria-label="Réglages"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h8M18 6h2M4 12h2M12 12h8M4 18h10M20 18h0"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg></button>
     </div>
@@ -238,7 +244,7 @@ body.page-rech .colonly { display:none !important; }
     <div class="setrow"><span class="label">Chiffre « valeur »</span><input type="color" id="cVal" aria-label="Couleur du chiffre de la valeur de la collection"><button type="button" class="ghost" data-reset="cVal">Par défaut</button></div>
     <div class="setrow"><span class="label">Texte</span><input type="color" id="cText" aria-label="Couleur du texte (noms et prix)"><button type="button" class="ghost" data-reset="cText">Par défaut</button><span class="meta">noms des cartes, prix, titres</span></div>
     <p class="help">L'image reste uniquement dans ce navigateur : elle n'est ni envoyée, ni enregistrée sur GitHub. Il faut la choisir de nouveau sur chaque appareil. Le thème, les couleurs et l'affichage (grille/liste, montants cachés) sont aussi retenus ici.</p>
-    <div class="row"><button type="button" class="ghost" id="setToken">Clé d'accès GitHub…</button></div>
+    <div class="row"><button type="button" class="ghost ownonly" id="setToken">Clé d'accès GitHub…</button><button type="button" class="ghost ownonly" id="acctOpen">Comptes invités…</button><button type="button" class="ghost" id="logout">Se déconnecter</button></div>
     <p class="err" id="setErr" role="alert"></p>
   </section>
 
@@ -266,6 +272,19 @@ body.page-rech .colonly { display:none !important; }
     </div>
     <p class="help" id="micNote" hidden>Dictée : dis par exemple « Zekrom ex BWR » ou « Dracaufeu ex numéro 199 » (la recherche se lance toute seule), ou « Ajoute Dracaufeu ex, extension 151, numéro 199, payé 5,99 euros ». Ton navigateur envoie la voix à son service de reconnaissance (Google pour Chrome). La recherche de carte interroge le site public TCGdex. Rien n'est enregistré sans ton clic sur « Enregistrer ».</p>
     <p class="err" id="fErr" role="alert"></p>
+  </form>
+
+  <form class="panel ownonly" id="acctPanel" hidden autocomplete="off">
+    <div class="charthead"><h2>Comptes invités</h2><button type="button" class="ghost" id="acctClose">Fermer</button></div>
+    <p class="help" style="margin-top:0">Un invité voit ta collection et la recherche, sans pouvoir rien modifier. Il ne connaît jamais ton mot de passe : son compte contient seulement une clé de lecture, chiffrée avec son propre mot de passe. Supprimer un invité change cette clé, donc même une copie qu'il aurait gardée ne marche plus sur les nouvelles données.</p>
+    <div id="acctList"></div>
+    <div class="grid" style="margin-top:12px">
+      <label>Identifiant de l'invité <input id="aName" maxlength="40" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="ex. thomas"></label>
+      <label>Son mot de passe (12 caractères min.) <input id="aPw" type="text" maxlength="100" autocomplete="new-password" spellcheck="false"></label>
+    </div>
+    <div class="row"><button type="button" class="ghost" id="aGen">Générer un mot de passe</button><button type="submit" id="aGo">Créer le compte</button></div>
+    <p class="help">Donne-lui l'identifiant et le mot de passe en main propre ou par un message privé, jamais au même endroit public que l'adresse du site.</p>
+    <p class="err" id="aErr" role="alert"></p>
   </form>
 
   <form class="panel" id="tokenPanel" hidden autocomplete="off">
@@ -387,6 +406,11 @@ async function deriveKey(password, salt, iterations, usage) {
     base, { name: "AES-GCM", length: 256 }, false, [usage]);
 }
 async function decryptVault(blob, password) {
+  if (state.guestKey) {                                   // invité : clé de lecture reçue avec son compte
+    if (!keyring || blob.salt !== keyring.salt) throw new Error("rotated");
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(blob.iv) }, state.guestKey, fromB64(blob.data));
+    return JSON.parse(new TextDecoder().decode(plain));
+  }
   const key = await deriveKey(password, fromB64(blob.salt), blob.iter, "decrypt");
   const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(blob.iv) }, key, fromB64(blob.data));
   return JSON.parse(new TextDecoder().decode(plain));
@@ -412,7 +436,49 @@ async function loadVault(file) {
   if (!r.ok && token) r = await fetch("data/" + file, { cache: "no-store" });
   if (!r.ok) throw new Error(r.status === 404 ? "absent" : "vault");
   const blob = await r.json();
-  try { return await decryptVault(blob, state.password); } catch (e) { throw new Error("password"); }
+  try { return await decryptVault(blob, state.password); } catch (e) { throw new Error(e.message === "rotated" ? "rotated" : "password"); }
+}
+
+// ---------- comptes invités (data/keyring.json) ----------
+// Le coffre est chiffré avec une clé K = PBKDF2(mot de passe, sel fixe du trousseau).
+// Chaque invité a une clé aléatoire F : F chiffrée avec SON mot de passe (wrap), K chiffrée avec F (kwrap),
+// F et son nom chiffrés avec K (owner, name) pour que toi seul puisses les relire et changer K.
+let keyring = null;
+async function loadKeyring() {
+  const token = getToken();
+  let r = token ? await fetch(API + "/contents/data/keyring.json?ref=main", { cache: "no-store",
+    headers: { Authorization: "Bearer " + token, Accept: "application/vnd.github.raw+json" } }) : null;
+  if (!r || !r.ok) r = await fetch("data/keyring.json", { cache: "no-store" });
+  keyring = r.ok ? await r.json() : null;
+  return keyring;
+}
+async function bitsFrom(password, salt, iterations) {
+  const base = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
+  return new Uint8Array(await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations, hash: "SHA-256" }, base, 256));
+}
+const aesKey = (bytes, use) => crypto.subtle.importKey("raw", bytes, "AES-GCM", false, [use]);
+async function seal(keyBytes, plain) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await aesKey(keyBytes, "encrypt"), plain);
+  return { iv: toB64(iv), data: toB64(new Uint8Array(ct)) };
+}
+async function unseal(keyBytes, box) {
+  return new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(box.iv) }, await aesKey(keyBytes, "decrypt"), fromB64(box.data)));
+}
+const normUser = u => String(u || "").trim().toLowerCase().normalize("NFC");
+async function userId(salt, name) {
+  const h = await crypto.subtle.digest("SHA-256", enc.encode(salt + "|" + normUser(name)));
+  return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+async function guestUnlock(name, password) {
+  if (!normUser(name) || !(await loadKeyring())) return false;
+  const id = await userId(keyring.salt, name), a = (keyring.accounts || []).find(x => x.id === id);
+  if (!a) return false;
+  try {
+    const f = await unseal(await bitsFrom(password, fromB64(a.salt), a.iter), a.wrap);
+    state.guestKey = await aesKey(await unseal(f, a.kwrap), "decrypt");
+    return true;
+  } catch (e) { return false; }
 }
 
 async function send(msg) {
@@ -1205,6 +1271,74 @@ function renderResearch() {
   box.replaceChildren(table);
 }
 
+async function openAccounts() {
+  $("acctPanel").hidden = false; $("aErr").textContent = "";
+  await loadKeyring();
+  const list = $("acctList"), accts = (keyring && keyring.accounts) || [];
+  if (!accts.length) { list.replaceChildren(el("p", "meta", "Aucun compte invité pour le moment.")); return; }
+  const k = await ownerKey(), rows = [];
+  for (const a of accts) {
+    let name = "?"; try { name = new TextDecoder().decode(await unseal(k, a.name)); } catch (e) {}
+    const row = el("div", "acct"), del = el("button", "ghost", "Supprimer"); del.type = "button";
+    del.addEventListener("click", () => removeAccount(a.id, name));
+    row.append(el("span", "name", name), del); rows.push(row);
+  }
+  list.replaceChildren(...rows);
+}
+const ownerKey = () => bitsFrom(state.password, fromB64(keyring.salt), keyring.iter || 600000);
+async function sendKeyring(next, msgDone) {
+  const stamp = String(Date.now());
+  $("aErr").textContent = "";
+  const ok = await change({ action: "set_keyring", stamp, keyring: next }, c => c, v => !!v && v.keyring_stamp === stamp);
+  if (ok) { await openAccounts(); setStatus(msgDone); }
+  return ok;
+}
+// Recalcule le trousseau avec une nouvelle clé de lecture (sel neuf) pour les comptes gardés.
+async function rekey(keep) {
+  const oldK = keyring ? await ownerKey() : null, salt = toB64(crypto.getRandomValues(new Uint8Array(16)));
+  const newK = await bitsFrom(state.password, fromB64(salt), 600000), accounts = [];
+  for (const a of keep) {
+    const f = await unseal(oldK, a.owner), name = new TextDecoder().decode(await unseal(oldK, a.name));
+    accounts.push({ id: await userId(salt, name), salt: a.salt, iter: a.iter, wrap: a.wrap,
+      kwrap: await seal(f, newK), owner: await seal(newK, f), name: await seal(newK, enc.encode(name)) });
+  }
+  return { salt, accounts, newK };
+}
+function genPassword() {
+  const abc = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789", r = crypto.getRandomValues(new Uint32Array(16));
+  return [...r].map(x => abc[x % abc.length]).join("").replace(/(.{4})(?!$)/g, "$1-");
+}
+async function addAccount(ev) {
+  ev.preventDefault();
+  const err = $("aErr"), name = normUser($("aName").value), pw = $("aPw").value;
+  err.textContent = "";
+  if (!/^[a-z0-9._-]{2,40}$/.test(name)) { err.textContent = "Identifiant : 2 à 40 lettres sans accent, chiffres, point, tiret ou souligné."; return; }
+  if (pw.length < 12) { err.textContent = "Mot de passe trop court : 12 caractères minimum (utilise « Générer »)."; return; }
+  if (pw === state.password || normUser(pw) === name) { err.textContent = "Choisis un mot de passe différent du tien et de l'identifiant."; return; }
+  $("aGo").disabled = true;
+  try {
+    await loadKeyring();
+    let base = keyring && keyring.salt ? { salt: keyring.salt, accounts: keyring.accounts || [] } : null, K;
+    if (!base) { const r = await rekey([]); base = { salt: r.salt, accounts: [] }; K = r.newK; } else K = await ownerKey();
+    const id = await userId(base.salt, name);
+    if (base.accounts.some(a => a.id === id)) { err.textContent = "Cet identifiant existe déjà."; return; }
+    if (base.accounts.length >= 20) { err.textContent = "20 comptes invités maximum."; return; }
+    const f = crypto.getRandomValues(new Uint8Array(32)), fsalt = crypto.getRandomValues(new Uint8Array(16));
+    const acct = { id, salt: toB64(fsalt), iter: 600000, wrap: await seal(await bitsFrom(pw, fsalt, 600000), f),
+      kwrap: await seal(f, K), owner: await seal(K, f), name: await seal(K, enc.encode(name)) };
+    if (await sendKeyring({ salt: base.salt, accounts: [...base.accounts, acct] }, "Compte « " + name + " » créé.")) {
+      $("aName").value = ""; $("aPw").value = "";
+    }
+  } catch (e) { err.textContent = "Création impossible : " + (e.message || "erreur"); }
+  finally { $("aGo").disabled = false; }
+}
+async function removeAccount(id, name) {
+  if (!confirm("Supprimer le compte « " + name + " » ?\n\nLa clé de lecture va changer : les autres invités gardent leur accès, lui non.")) return;
+  await loadKeyring();
+  const r = await rekey((keyring.accounts || []).filter(a => a.id !== id));
+  await sendKeyring({ salt: r.salt, accounts: r.accounts }, "Compte « " + name + " » supprimé et clé changée.");
+}
+
 function openToken() {
   $("tokenPanel").hidden = false;
   $("tokenState").textContent = getToken() ? "Un jeton est enregistré dans ce navigateur." : "Aucun jeton enregistré.";
@@ -1212,8 +1346,13 @@ function openToken() {
 }
 
 // ---------- démarrage ----------
-async function unlock(password) {
-  state.password = password;
+async function unlock(password, user) {
+  state.guestKey = null;
+  if (user && await guestUnlock(user, password)) state.password = null;
+  else state.password = password;
+  const guest = !!state.guestKey;
+  document.body.classList.toggle("guest", guest);
+  $("guestBadge").hidden = !guest;
   const v = await loadVault();
   state.vault = v; state.cards = v.cards.cards;
   draw(v.cards.updated);
@@ -1221,16 +1360,21 @@ async function unlock(password) {
   setPage(location.hash === "#recherche" ? "rech" : "col");
 }
 
+let failures = 0;
 $("login").addEventListener("submit", async ev => {
   ev.preventDefault();
-  const btn = $("go"), err = $("err"), pw = $("pw").value;
+  const btn = $("go"), err = $("err"), pw = $("pw").value, user = $("user").value;
   btn.disabled = true; err.textContent = "";
+  if (failures) await sleep(Math.min(30, 2 ** failures) * 1000);   // freine les essais en série
   try {
-    await unlock(pw);
-    try { sessionStorage.setItem("k", pw); } catch (e) {}
+    await unlock(pw, user);
+    failures = 0;
+    try { sessionStorage.setItem("k", JSON.stringify({ u: user, p: pw })); } catch (e) {}
   } catch (e) {
-    state.password = null;
-    err.textContent = e.message === "password" ? "Mot de passe incorrect." : "Données indisponibles pour le moment.";
+    state.password = null; state.guestKey = null; failures++;
+    err.textContent = e.message === "password" ? "Identifiant ou mot de passe incorrect."
+      : e.message === "rotated" ? "Ce compte invité n'est plus valable. Demande un nouvel accès."
+      : "Données indisponibles pour le moment.";
   } finally {
     btn.disabled = false; $("pw").value = "";
   }
@@ -1321,6 +1465,11 @@ $("btnEye").addEventListener("click", () => { const on = !document.body.classLis
 $("btnSet").addEventListener("click", () => { $("setPanel").hidden = !$("setPanel").hidden; });
 $("setClose").addEventListener("click", () => { $("setPanel").hidden = true; });
 $("setToken").addEventListener("click", openToken);
+$("acctOpen").addEventListener("click", () => openAccounts().catch(() => { $("aErr").textContent = "Comptes indisponibles pour le moment."; }));
+$("acctClose").addEventListener("click", () => { $("acctPanel").hidden = true; });
+$("acctPanel").addEventListener("submit", addAccount);
+$("aGen").addEventListener("click", () => { $("aPw").value = genPassword(); });
+$("logout").addEventListener("click", () => { try { sessionStorage.removeItem("k"); } catch (e) {} location.reload(); });
 $("themeSeg").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; pref.set("theme", b.dataset.t); applyTheme(b.dataset.t); });
 $("wallPick").addEventListener("click", () => $("wallFile").click());
 $("wallFile").addEventListener("change", async () => { const f = $("wallFile").files[0]; $("wallFile").value = ""; if (f) await chooseWall(f); });
@@ -1353,7 +1502,8 @@ $("btnMic").addEventListener("click", dictate);
 $("fMic").addEventListener("click", dictate);
 try {
   const saved = sessionStorage.getItem("k");
-  if (saved) unlock(saved).catch(() => { state.password = null; try { sessionStorage.removeItem("k"); } catch (e) {} });
+  let s = null; try { s = JSON.parse(saved); } catch (e) { s = saved ? { p: saved } : null; }
+  if (s && s.p) unlock(s.p, s.u).catch(() => { state.password = null; state.guestKey = null; try { sessionStorage.removeItem("k"); } catch (e) {} });
 } catch (e) {}
 </script>
 </body>
