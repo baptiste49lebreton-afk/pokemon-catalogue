@@ -665,7 +665,7 @@ function draw(updated) {
   });
 
   const list = $("list");
-  list.className = "wrap " + view;
+  list.className = "wrap colonly " + view;
   if (!cards.length) list.replaceChildren(el("p", "help", "Aucune carte pour le moment. Clique sur « + Ajouter » pour commencer."));
   else list.replaceChildren(view === "grid" ? grid : table);
   document.querySelectorAll("#viewSeg button").forEach(b => b.classList.toggle("on", b.dataset.v === view));

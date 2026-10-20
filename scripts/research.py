@@ -2,8 +2,8 @@
 """
 Recherche des cartes les plus rentables à acheter en loose puis à faire grader CCC.
 
-1. Découverte : on parcourt les ventes réussies CCC de Graded Card Center (GCC) par tranches de prix
-   (la page publique ne montre que les 30 ventes les plus récentes d'une recherche, d'où le découpage).
+1. Découverte : on parcourt les ventes réussies CCC de Graded Card Center (GCC) par note et par tranche
+   de prix (la page publique ne montre que les 30 ventes les plus récentes d'une recherche, d'où le découpage).
 2. Prix loose : pour chaque carte française trouvée, prix Cardmarket (tendance, toutes langues) via TCGdex.
 3. Affinage : pour les cartes les plus prometteuses, on relit toutes leurs ventes CCC sur GCC
    (même méthode que scripts/gcc_prices.py : médiane des 3 dernières ventes de chaque note).
@@ -31,8 +31,8 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "data" / "research.json"
 PAUSE_S = 2            # politesse envers GCC : 2 s entre deux pages
 PRIX_MIN, PRIX_MAX = 15, 6000   # tranches de prix de vente CCC parcourues (€)
-PAS = 1.07             # chaque tranche couvre +7 % : environ 120 pages
-AFFINAGE_MAX = 250     # nombre de cartes dont on relit toutes les ventes
+PAS = 1.05             # chaque tranche couvre +5 % : environ 110 pages par note
+AFFINAGE_MAX = 300     # nombre de cartes dont on relit toutes les ventes
 LOOSE_MIN = 3          # en dessous, la carte ne vaut pas le coût de gradation
 
 _VENTE = re.compile(
@@ -48,7 +48,17 @@ def norm(s):
     return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
-def get_page(params):
+def get_page(params, essais=2):
+    try:
+        return _get_page(params)
+    except Exception:
+        if essais <= 1:
+            raise
+        time.sleep(10)
+        return get_page(params, essais - 1)
+
+
+def _get_page(params):
     q = {"status": "SOLD", "sortType": "SOLD_LAST", "gradingCompanies": '["CCC"]', **params}
     req = urllib.request.Request(gcc_prices.BASE + "?" + urllib.parse.urlencode(q), headers={
         "User-Agent": "pokemon-catalogue/1.0 (suivi perso de collection)", "Accept": "text/html"})
@@ -138,19 +148,22 @@ def main():
     if not plain and len(password) < 12:
         sys.exit("Le secret GitHub SITE_PASSWORD est absent ou trop court (12 caractères minimum).")
 
-    # 1. découverte par tranches de prix
-    trouvees, bas, pages = {}, PRIX_MIN, 0
-    while bas < PRIX_MAX:
-        haut = max(bas + 1, round(bas * PAS))
-        try:
-            for v in ventes(get_page({"minPrice": bas, "maxPrice": haut})):
-                if v["edition"].lower().startswith("edition 1"):
-                    continue  # le prix Cardmarket ne distingue pas la 1re édition
-                trouvees.setdefault(cle(v), []).append(v)
-        except Exception as exc:
-            print(f"  GCC : tranche {bas}-{haut} € ignorée ({exc})")
-        pages += 1
-        bas = haut + 1
+    # 1. découverte par note et par tranche de prix
+    trouvees, pages = {}, 0
+    for note in gcc_prices.NOTES:
+        bas = PRIX_MIN
+        while bas < PRIX_MAX:
+            haut = max(bas + 1, round(bas * PAS))
+            try:
+                page = get_page({"grades": json.dumps([note]), "minPrice": bas, "maxPrice": haut})
+                for v in ventes(page):
+                    if v["edition"].lower().startswith("edition 1"):
+                        continue  # le prix Cardmarket ne distingue pas la 1re édition
+                    trouvees.setdefault(cle(v), []).append(v)
+            except Exception as exc:
+                print(f"  GCC : CCC {note}, tranche {bas}-{haut} € ignorée ({exc})")
+            pages += 1
+            bas = haut + 1
     print(f"Découverte : {pages} pages GCC, {len(trouvees)} cartes françaises vendues en CCC 9 à 10.")
 
     # 2. prix loose Cardmarket
