@@ -230,7 +230,7 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
       <button type="button" class="ghost ic" id="btnEye" aria-pressed="false" title="Cacher les montants" aria-label="Cacher ou afficher les montants"></button>
       <button type="button" class="ghost ic" id="btnSet" title="Réglages (thème, fond d'écran)" aria-label="Réglages"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h8M18 6h2M4 12h2M12 12h8M4 18h10M20 18h0"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg></button>
     </div>
-    <nav class="seg tabs" id="tabs" aria-label="Pages"><button type="button" data-p="col">Ma collection</button><button type="button" data-p="rech">🔍 Recherche</button></nav>
+    <nav class="seg tabs" id="tabs" aria-label="Pages"><button type="button" data-p="col">Ma collection</button><button type="button" data-p="rech">🔍 Recherche</button><button type="button" data-p="watch">📈 À surveiller</button></nav>
     <div class="tiles colonly" id="totals"></div>
     <p class="updated colonly" id="updated"></p>
     <div class="bar colonly">
@@ -395,6 +395,24 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
     <div class="wrap list rlist" id="rList"></div>
     <p class="help" id="rNote2">À savoir : les ventes GCC sont des cartes françaises, alors que le prix Cardmarket mélange toutes les langues. Le prix CCC retenu est la médiane des 3 dernières ventes de la note (6 derniers mois en priorité). Une carte n'obtient pas toujours la note visée : regarde aussi ce que donnent les notes en dessous.</p>
     <p class="help" id="rLiq2">Liquidité (sur 100) : 65 % l'activité des ventes CCC de la note visée (date de la dernière vente et nombre de ventes récentes), 35 % la hype du Pokémon (estimation de sa popularité auprès des collectionneurs, étoiles de 1 à 5). Sans vente depuis plus de 60 jours, une carte ne passe jamais « Liquide » (et reste « Lent » après 4 mois), même très populaire. C'est un indicateur, pas une garantie de revente.</p>
+  </section>
+  <section id="watchPage" hidden>
+    <div class="panel">
+      <h2>Cartes à surveiller</h2>
+      <p class="help" style="margin-top:0">Les cartes dont le prix monte vite : moyenne Cardmarket des 7 derniers jours comparée à celle des 30 derniers jours. Prix Cardmarket toutes langues (pas le prix français), relevés chaque matin.</p>
+      <div class="grid" style="margin-top:12px">
+        <label>Hausse minimum <select id="wUp"><option value="20">+20 % et plus</option><option value="30">+30 % et plus</option><option value="50">+50 % et plus</option><option value="100">+100 % et plus</option></select></label>
+        <label>Prix minimum <select id="wMin"><option value="5">5 €</option><option value="10">10 €</option><option value="20">20 €</option><option value="50">50 €</option><option value="100">100 €</option></select></label>
+      </div>
+      <div class="setrow" style="margin-top:12px; align-items:center; gap:10px; flex-wrap:wrap">
+        <button type="button" id="wApply">Actualiser</button>
+        <span class="meta" id="wInfo" aria-live="polite"></span>
+      </div>
+    </div>
+    <h3 style="margin:18px 0 6px">Dans le classement Recherche</h3>
+    <div class="wrap list rlist" id="wList"></div>
+    <h3 style="margin:18px 0 6px">Dans ma collection</h3>
+    <div class="wrap list rlist" id="wCol"></div>
   </section>
   <section id="fichePage" hidden></section>
 <img id="zoom" alt="">
@@ -1227,9 +1245,9 @@ function editFr(c, mk) {
 // ---------- page Recherche : acheter en loose, faire grader en CCC ----------
 let page = "col", research = null, researchErr = "";
 function setPage(p) {
-  page = p === "rech" || p === "fiche" ? p : "col";
+  page = p === "rech" || p === "fiche" || p === "watch" ? p : "col";
   document.body.classList.toggle("page-rech", page !== "col");
-  $("rechPage").hidden = page !== "rech"; $("fichePage").hidden = page !== "fiche";
+  $("rechPage").hidden = page !== "rech"; $("fichePage").hidden = page !== "fiche"; $("watchPage").hidden = page !== "watch";
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.p === page));
   hideZoom(); renderSim();
   if (page !== "col") { if (!research && !researchErr) loadResearch(); else renderResearch(); }
@@ -1277,6 +1295,80 @@ function liquidity(c, s) {
   if (days > 120) score = Math.min(score, 45); else if (days > 60) score = Math.min(score, 59);
   const lvl = score >= 88 ? ["Très liquide", "a"] : score >= 72 ? ["Liquide", "b"] : score >= 50 ? ["Moyen", "c"] : ["Lent", "d"];
   return { score, days, hype, label: lvl[0], cls: lvl[1] };
+}
+// ---------- page « À surveiller » : cartes dont le prix monte vite ----------
+[["wUp", "w_up", "30"], ["wMin", "w_min", "10"]].forEach(([id, k, d]) => { $(id).value = pref.get(k, d); if ($(id).value === "") $(id).value = d; });
+$("wApply").addEventListener("click", () => { pref.set("w_up", $("wUp").value); pref.set("w_min", $("wMin").value); renderWatch(); });
+function watchTable(cols, rows) {
+  const table = el("table"), thead = el("thead"), head = el("tr"), tbody = el("tbody");
+  cols.forEach(([t, k]) => head.append(el("th", k, t)));
+  thead.append(head); table.append(thead, tbody);
+  rows.forEach(r => tbody.append(r)); return table;
+}
+function watchCell(c, rank, extra) {
+  const imgCell = el("td", "img");
+  if (validImg(c)) {
+    const img = el("img"); img.src = c.image; img.alt = ""; img.loading = "lazy"; img.referrerPolicy = "no-referrer";
+    img.addEventListener("mouseenter", () => showZoom(img, c.image)); img.addEventListener("mouseleave", hideZoom); imgCell.append(img);
+  }
+  const info = el("td"), name = el("div", "name");
+  name.append(el("span", "rank", "#" + rank), c.nom);
+  info.append(name, el("div", "meta", [c.set, c.numero, c.annee].filter(Boolean).join(" · ")));
+  if (extra) info.append(extra);
+  return [imgCell, info];
+}
+function renderWatch() {
+  const up = Number(pref.get("w_up", "30")) || 30, min = Number(pref.get("w_min", "10")) || 10;
+  const box = $("wList"), colBox = $("wCol");
+  if (!research) { $("wInfo").textContent = researchErr; box.replaceChildren(); colBox.replaceChildren(); return; }
+  // 1. cartes du classement : moyenne 7 jours / moyenne 30 jours (Cardmarket, toutes langues)
+  const withAvg = research.cartes.filter(c => c.cm && c.cm.avg7 > 0 && c.cm.avg30 > 0);
+  const rows = withAvg.map(c => ({ c, pct: (c.cm.avg7 / c.cm.avg30 - 1) * 100 })).filter(r => r.pct >= up && r.c.cm.avg7 >= min).sort((a, b) => b.pct - a.pct);
+  $("wInfo").textContent = withAvg.length
+    ? "Relevé du " + fmtDay(research.updated) + " · " + withAvg.length + " cartes suivies · " + rows.length + " en hausse d'au moins " + up + " % (prix moyen 7 jours ≥ " + min + " €)."
+    : "";
+  if (!withAvg.length) box.replaceChildren(el("p", "help", "Les moyennes sur 7 et 30 jours arrivent avec le prochain relevé automatique (demain matin). Reviens ensuite."));
+  else if (!rows.length) box.replaceChildren(el("p", "help", "Aucune carte du classement ne monte autant en ce moment : baisse la hausse minimum ou le prix minimum, puis clique sur « Actualiser »."));
+  else {
+    const trs = rows.slice(0, 150).map((r, i) => {
+      const { c } = r, tr = el("tr"), [imgCell, info] = watchCell(c, i + 1);
+      const a = (v, lab) => { const td = el("td", "r"); td.append(el("div", "money", fmt(v))); td.dataset.label = lab; return td; };
+      const pct = el("td", "r big up"); pct.append(el("span", "pill up", signedPct(r.pct))); pct.dataset.label = "Hausse";
+      const cm = el("td", "r"); const link = el("a", "meta", "Cardmarket ↗"); link.href = cmLink(c); link.target = "_blank"; link.rel = "noopener noreferrer";
+      link.style.cssText = "display:block; color:var(--muted); text-decoration:underline"; cm.append(link);
+      tr.append(imgCell, info, a(c.cm.avg30, "Moy. 30 j"), a(c.cm.avg7, "Moy. 7 j"), a(c.cm.avg1, "Moy. 1 j"), pct, cm);
+      tr.classList.add("clk"); tr.tabIndex = 0; tr.title = "Ouvrir la fiche de la carte dans un nouvel onglet";
+      tr.addEventListener("click", ev => { if (!ev.target.closest("a, button")) openFiche(c); });
+      return tr;
+    });
+    box.replaceChildren(watchTable([["", ""], ["Carte", ""], ["Moy. 30 j", "r"], ["Moy. 7 j", "r"], ["Moy. 1 j", "r"], ["Hausse", "r"], ["", "r"]], trs));
+  }
+  // 2. cartes de la collection : prix du jour comparé à celui d'il y a une semaine environ (historique du site)
+  const hist = (state.vault && state.vault.history) || {}, mine = [];
+  let enoughHistory = false;
+  (state.cards || []).filter(c => !c.pending && c.id && c.type !== "scelle").forEach(c => {
+    const days = Object.entries(hist[c.id] || {}).sort((a, b) => a[0] < b[0] ? -1 : 1);
+    if (days.length < 2) return;
+    const [dNow, vNow] = days[days.length - 1], limit = new Date(dNow + "T12:00:00").getTime() - 6 * 864e5;
+    let past = null;
+    for (const [d, v] of days) if (new Date(d + "T12:00:00").getTime() <= limit) past = [d, v];
+    if (!past || !(past[1] > 0)) return;
+    enoughHistory = true;
+    const pct = (vNow / past[1] - 1) * 100;
+    if (pct >= up && vNow >= min) mine.push({ c, pct, past, vNow });
+  });
+  mine.sort((a, b) => b.pct - a.pct);
+  if (!mine.length) colBox.replaceChildren(el("p", "help", enoughHistory ? "Aucune de tes cartes ne monte autant en ce moment." : "L'historique de ta collection est encore trop court (moins d'une semaine) pour repérer une hausse."));
+  else {
+    const trs = mine.map((r, i) => {
+      const tr = el("tr"), [imgCell, info] = watchCell(r.c, i + 1);
+      const before = el("td", "r"); before.append(el("div", "money", fmt(r.past[1])), el("div", "meta", "au " + fmtDay(r.past[0]))); before.dataset.label = "Avant";
+      const now = el("td", "r"); now.append(el("div", "money", fmt(r.vNow))); now.dataset.label = "Maintenant";
+      const pct = el("td", "r big up"); pct.append(el("span", "pill up", signedPct(r.pct))); pct.dataset.label = "Hausse";
+      tr.append(imgCell, info, before, now, pct); return tr;
+    });
+    colBox.replaceChildren(watchTable([["", ""], ["Carte", ""], ["Avant", "r"], ["Maintenant", "r"], ["Hausse", "r"]], trs));
+  }
 }
 // ---------- recherche d'une carte : fiche de statistiques ----------
 // ---------- fiche d’une carte (nouvel onglet) : recherche pré-remplie sur Vinted / eBay / Cardmarket ----------
@@ -1385,6 +1477,7 @@ function researchRows() {
 }
 function renderResearch() {
 if (page === "fiche") { renderFichePage(); return; }
+if (page === "watch") { renderWatch(); return; }
   const note = pref.get("r_note", "10");
   document.querySelectorAll("#rNote button").forEach(b => b.classList.toggle("on", b.dataset.n === note));
   document.querySelectorAll("#rSort button").forEach(b => b.classList.toggle("on", b.dataset.s === pref.get("r_sort", "roi")));
@@ -1524,7 +1617,7 @@ async function unlock(password, user) {
   draw(v.cards.updated);
   $("login").hidden = true; $("app").hidden = false;
 if (FICHE_KEY) { setPage("fiche"); return; }
-  setPage(location.hash === "#recherche" ? "rech" : "col");
+  setPage(pageFromHash());
 }
 
 let failures = 0;
@@ -1656,8 +1749,9 @@ $("veil").addEventListener("input", () => { applyVeil(Number($("veil").value)); 
 $("viewSeg").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; view = b.dataset.v === "list" ? "list" : "grid"; pref.set("view", view); hideZoom(); draw(); });
 $("ranges").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; chartRange = b.dataset.r; renderChart(); });
 $("tabs").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return;
-  history.replaceState(null, "", b.dataset.p === "rech" ? "#recherche" : location.pathname + location.search); setPage(b.dataset.p); });
-window.addEventListener("hashchange", () => { if (state.password) setPage(location.hash === "#recherche" ? "rech" : "col"); });
+  history.replaceState(null, "", b.dataset.p === "rech" ? "#recherche" : b.dataset.p === "watch" ? "#surveiller" : location.pathname + location.search); setPage(b.dataset.p); });
+const pageFromHash = () => location.hash === "#recherche" ? "rech" : location.hash === "#surveiller" ? "watch" : "col";
+window.addEventListener("hashchange", () => { if (state.password) setPage(pageFromHash()); });
 // Les filtres ne s'appliquent qu'au clic sur « Actualiser » (ou Entrée) : on lit alors les valeurs affichées.
 const R_FILTERS = [["rQ", "r_q", ""], ["rShip", "r_ship", "3"], ["rComm", "r_comm", "0"], ["rMin", "r_min", "5"], ["rMax", "r_max", ""], ["rRoi", "r_roi", ""], ["rGain", "r_gain", ""], ["rN", "r_n", "1"], ["rSpeed", "r_speed", "regular"], ["rFr", "r_fr", ""]];
 function rMarkPending() {
