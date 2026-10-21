@@ -1412,15 +1412,25 @@ function buyBar(c) {   // « Acheter sur… » : même recherche et mêmes filtr
   bar.append(el("span", "label", "Chercher cette carte"), sel);
   return bar;
 }
+const LIQ_COL = { a: "var(--up)", b: "var(--accent)", c: "var(--muted)", d: "var(--down)" };
+function liqInfo(c, r) {   // note de liquidité d'une carte à surveiller : meilleure note CCC avec ventes, sinon la hype seule
+  const hype = hypeOf(c.nom); let best = null;
+  ["10", "9.5", "9"].forEach(n => { const sale = r.ccc && r.ccc[n]; if (!sale) return;
+    const l = liquidity(c, sale); if (!best || l.score > best.l.score) best = { n, sale, l }; });
+  return { hype, best, score: best ? best.l.score : hype };
+}
+function starRating(score, color, title) {   // 5 étoiles remplies à score % (40 % = 2 étoiles)
+  const w = el("span"), back = el("span", "", "★★★★★"), front = el("span", "", "★★★★★");
+  w.style.cssText = "position:relative; display:inline-block; width:max-content; white-space:nowrap; letter-spacing:1px; line-height:1.1; font-size:1.05rem";
+  back.style.cssText = "color:var(--muted); opacity:.35";
+  front.style.cssText = "position:absolute; left:0; top:0; overflow:hidden; white-space:nowrap; width:" + Math.max(0, Math.min(100, score)) + "%; color:" + color;
+  w.title = title; w.setAttribute("aria-label", title); w.append(back, front); return w;
+}
 function liqBlock(c, r) {   // petit encart « Liquidité » : même calcul qu'en Recherche (ventes CCC + hype du Pokémon)
   const box = el("div"); box.style.cssText = "flex:0 1 240px; min-width:200px";
   box.append(el("div", "meta", "Liquidité"));
-  const hype = hypeOf(c.nom), stars = Math.max(1, Math.min(5, Math.round(hype / 20))), starTxt = "★".repeat(stars) + "☆".repeat(5 - stars);
-  let best = null;
-  ["10", "9.5", "9"].forEach(n => { const sale = r.ccc && r.ccc[n]; if (!sale) return;
-    const l = liquidity(c, sale); if (!best || l.score > best.l.score) best = { n, sale, l }; });
-  const col = { a: "var(--up)", b: "var(--accent)", c: "var(--muted)", d: "var(--down)" };
-  const score = best ? best.l.score : hype, fill = best ? col[best.l.cls] : "var(--muted)";
+  const { hype, best, score } = liqInfo(c, r), stars = Math.max(1, Math.min(5, Math.round(hype / 20))), starTxt = "★".repeat(stars) + "☆".repeat(5 - stars);
+  const fill = best ? LIQ_COL[best.l.cls] : "var(--muted)";
   const head = el("div"); head.style.cssText = "display:flex; align-items:baseline; gap:8px; margin:4px 0 7px";
   if (best) head.append(el("span", "pill liq-" + best.l.cls, best.l.label), el("span", "meta", "score " + score + " / 100"));
   else head.append(el("span", "pill liq-c", "Non mesurée"), el("span", "meta", "hype " + hype + " / 100"));
@@ -1500,14 +1510,17 @@ function renderWatch() {
       link.href = "https://pokoya.app/carte/" + c.slug;
       if (rc) { const fiche = el("a", "meta", "Fiche ↗"); fiche.href = location.pathname + "?carte=" + encodeURIComponent(cardKey(rc)) + "#fiche"; links.push(fiche); }
       links.forEach(x => { x.target = "_blank"; x.rel = "noopener noreferrer"; x.style.cssText = "display:block; color:var(--muted); text-decoration:underline"; cm.append(x); });
-      tr.append(imgCell, info, a(c.avg30, "Moy. 30 j"), a(c.avg7, "Moy. 7 j"), a(c.avg1, "Moy. 1 j"), pct, cm);
+      const li = liqInfo(c, rc || {}), lq = el("td", "r"); lq.dataset.label = "Liquidité";
+      lq.append(starRating(li.score, li.best ? LIQ_COL[li.best.l.cls] : "var(--muted)", li.best
+        ? "Liquidité : " + li.best.l.label + " (score " + li.score + " / 100)" : "Pas de vente CCC : popularité du Pokémon (hype " + li.hype + " / 100)"));
+      tr.append(imgCell, info, a(c.avg30, "Moy. 30 j"), a(c.avg7, "Moy. 7 j"), a(c.avg1, "Moy. 1 j"), pct, lq, cm);
       tr.classList.add("clk"); tr.tabIndex = 0; tr.title = "Voir l'évolution et les prix CCC";
-      const open = () => toggleDetail(tr, () => watchDetail(c), 7);
+      const open = () => toggleDetail(tr, () => watchDetail(c), 8);
       tr.addEventListener("click", ev => { if (!ev.target.closest("a, button")) open(); });
       tr.addEventListener("keydown", ev => { if (ev.key === "Enter" && ev.target === tr) open(); });
       return tr;
     });
-    box.replaceChildren(watchTable([["", ""], ["Carte", ""], ["Moy. 30 j", "r"], ["Moy. 7 j", "r"], ["Moy. 1 j", "r"], ["Hausse", "r"], ["", "r"]], trs));
+    box.replaceChildren(watchTable([["", ""], ["Carte", ""], ["Moy. 30 j", "r"], ["Moy. 7 j", "r"], ["Moy. 1 j", "r"], ["Hausse", "r"], ["Liquidité", "r"], ["", "r"]], trs));
   }
   // 2. cartes de la collection : prix du jour comparé à celui d'il y a une semaine environ (historique du site)
   const hist = (state.vault && state.vault.history) || {}, mine = [];
