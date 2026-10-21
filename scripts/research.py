@@ -30,9 +30,11 @@ import update_prices  # chiffrement et accès TCGdex déjà utilisés pour le co
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "data" / "research.json"
 PAUSE_S = 2            # politesse envers GCC : 2 s entre deux pages
-PRIX_MIN, PRIX_MAX = 8, 6000    # tranches de prix de vente CCC parcourues (€)
-PAS = 1.035            # chaque tranche couvre +3,5 % : environ 190 pages par note
-AFFINAGE_MAX = 450     # nombre de cartes dont on relit toutes les ventes
+PRIX_MIN, PRIX_MAX = 6, 6000    # tranches de prix de vente CCC parcourues (€)
+PAS = 1.035            # chaque tranche couvre +3,5 % : environ 200 pages par note
+SATURATION = 24        # une page n'affiche que ~24 à 30 ventes : au-delà, la tranche est coupée en deux
+MAX_PAGES = 2500       # garde-fou : au-delà, on ne coupe plus les tranches pleines
+AFFINAGE_MAX = 1200    # nombre de cartes dont on relit toutes les ventes (avant : 450)
 LOOSE_MIN = 3          # en dessous, la carte ne vaut pas le coût de gradation
 
 _VENTE = re.compile(
@@ -83,6 +85,33 @@ def ventes(page):
                     "numero": m["ref"].split("/")[0].strip(), "edition": m["edition"].strip(), "annee": int(m["annee"]),
                     "prix": prix, "date": jour})
     return out
+
+
+def nb_ventes_page(page):
+    """(ventes affichées, nombre total annoncé par GCC ou None) : sert à repérer une tranche coupée."""
+    texte = gcc_prices._texte(page)
+    affichees = len(re.findall(r"Prix de vente", texte))
+    m = re.search(r"(\d[\d  .']*)\s+résultats?", texte)
+    total = int(re.sub(r"\D", "", m.group(1))) if m and re.sub(r"\D", "", m.group(1)) else None
+    return affichees, total
+
+
+def decouvrir(note, bas, haut, trouvees, compteur):
+    """Lit les ventes CCC d'une note entre bas et haut €. Si GCC en cache (tranche pleine), coupe en deux et relit."""
+    page = get_page({"grades": json.dumps([note]), "minPrice": bas, "maxPrice": haut})
+    compteur[0] += 1
+    for v in ventes(page):
+        if v["edition"].lower().startswith("edition 1"):
+            continue  # le prix Cardmarket ne distingue pas la 1re édition
+        deja = trouvees.setdefault(cle(v), [])
+        if not any((x["note"], x["prix"], x["date"], x["titre"]) == (v["note"], v["prix"], v["date"], v["titre"]) for x in deja):
+            deja.append(v)
+    affichees, total = nb_ventes_page(page)
+    pleine = affichees >= SATURATION or (total is not None and total > affichees)
+    if pleine and haut > bas and compteur[0] < MAX_PAGES:
+        milieu = (bas + haut) // 2
+        decouvrir(note, bas, milieu, trouvees, compteur)
+        decouvrir(note, milieu + 1, haut, trouvees, compteur)
 
 
 def cle(v):
@@ -149,21 +178,17 @@ def main():
         sys.exit("Le secret GitHub SITE_PASSWORD est absent ou trop court (12 caractères minimum).")
 
     # 1. découverte par note et par tranche de prix
-    trouvees, pages = {}, 0
+    trouvees, compteur = {}, [0]
     for note in gcc_prices.NOTES:
         bas = PRIX_MIN
         while bas < PRIX_MAX:
             haut = max(bas + 1, round(bas * PAS))
             try:
-                page = get_page({"grades": json.dumps([note]), "minPrice": bas, "maxPrice": haut})
-                for v in ventes(page):
-                    if v["edition"].lower().startswith("edition 1"):
-                        continue  # le prix Cardmarket ne distingue pas la 1re édition
-                    trouvees.setdefault(cle(v), []).append(v)
+                decouvrir(note, bas, haut, trouvees, compteur)
             except Exception as exc:
                 print(f"  GCC : CCC {note}, tranche {bas}-{haut} € ignorée ({exc})")
-            pages += 1
             bas = haut + 1
+    pages = compteur[0]
     print(f"Découverte : {pages} pages GCC, {len(trouvees)} cartes françaises vendues en CCC 9 à 10.")
 
     # 2. prix loose Cardmarket
