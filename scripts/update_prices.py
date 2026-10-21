@@ -7,9 +7,11 @@ Met à jour le coffre chiffré data/vault.json (cartes, produits scellés, prix 
 - Source des prix des cartes : API publique TCGdex (https://tcgdex.dev), gratuite et sans clé.
   Prix Cardmarket en euros uniquement (pas de prix en dollars).
 - Produits scellés : prix de marché saisi à la main (champ prix_marche_manuel).
-- Prix « français » : le prix Cardmarket (toutes langues) sert de prix de base. Il peut être remplacé
-  par un prix saisi à la main (champ prix_fr) ou par le prix relevé sur CardTrader depuis le site
-  (champ fr_auto, valable 14 jours). Priorité : saisi à la main > CardTrader > Cardmarket.
+- Prix « français » : la cote Cardmarket de la version française en Near Mint, relevée sur Pokoya
+  (scripts/pokoya_prices.py), sert de prix de base. Elle peut être remplacée par un prix saisi à la main
+  (champ prix_fr). Si Pokoya n'a pas de prix FR pour la carte : prix relevé sur CardTrader depuis le site
+  (champ fr_auto, valable 14 jours), sinon prix Cardmarket toutes langues.
+  Priorité : saisi à la main > Pokoya > CardTrader > Cardmarket.
 - Les prix CCC (10, 9.5, 9) sont relevés automatiquement sur les ventes réussies de Graded Card Center
   (scripts/gcc_prices.py), en euros, sans estimation. Une valeur saisie à la main passe toujours avant.
 
@@ -45,6 +47,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 import gcc_prices  # prix CCC réels relevés sur Graded Card Center (scripts/gcc_prices.py)
+import pokoya_prices  # prix FR Near Mint relevés sur Pokoya (scripts/pokoya_prices.py)
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -462,6 +465,12 @@ def main():
         price_cm = best_price(card) if card else None
         cm_id = (((card or {}).get("pricing") or {}).get("cardmarket") or {}).get("idProduct") or old.get("cm_id")
         image = f"{card['image']}/low.webp" if card and card.get("image") else None
+        set_code = ((card or {}).get("set") or {}).get("id") or old.get("set_code")
+        try:
+            price_pk = pokoya_prices.prix_fr(set_code, entry["numero"])
+        except Exception as exc:  # Pokoya injoignable ou page changée : on garde le dernier prix FR connu
+            price_pk = old.get("prix_pokoya")
+            print(f"  Pokoya indisponible pour {entry['nom']} : {exc}")
         manual, auto = entry.get("prix_fr"), entry.get("fr_auto") or {}
         try:
             auto_ok = auto.get("prix") and (date.today() - date.fromisoformat(auto["date"])).days <= FR_AUTO_JOURS
@@ -470,6 +479,8 @@ def main():
         fr_n = fr_min = None
         if manual is not None:
             price, source = manual, "manuel"
+        elif price_pk is not None:
+            price, source = price_pk, "pokoya"
         elif auto_ok:
             price, source, fr_n, fr_min = auto["prix"], "fr", auto.get("n"), auto.get("min")
         else:
@@ -513,6 +524,8 @@ def main():
             "quantite": entry.get("quantite", 1),
             "prix_marche": price,
             "prix_cm": price_cm,
+            "prix_pokoya": price_pk,
+            "set_code": set_code,
             "cm_id": cm_id,
             "source": source,
             "prix_fr": manual,

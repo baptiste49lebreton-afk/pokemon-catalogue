@@ -28,6 +28,6 @@ Pousse le dossier sur GitHub et active GitHub Pages (Settings → Pages → bran
 
 ## À savoir
 
-- Le prix utilisé est la tendance Cardmarket, avec repli sur le prix market TCGplayer. Vérifie que ça correspond bien à ce que tu veux suivre (prix moyen du marché).
+- Le prix utilisé est la cote Cardmarket de la version française en Near Mint, relevée sur Pokoya (`scripts/pokoya_prices.py`). Sans prix français sur Pokoya, on se replie sur la tendance Cardmarket toutes langues.
 - Les quotas et les champs de l'API peuvent changer : vérifie sur pokemontcg.io.
 - L'historique se remplit à partir du premier lancement ; il n'y a pas de données passées.

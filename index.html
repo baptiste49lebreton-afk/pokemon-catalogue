@@ -748,7 +748,7 @@ function draw(updated) {
   const cols = [["", ""], ["Élément", ""], ["Payé", "r"], ["Prix actuel", "r"], ["Écart", "r"],
    ["CCC 10", "r"], ["CCC 9.5", "r"], ["CCC 9", "r"], ["", "ref"], ["Frais CCC", "r"], ["", ""]];
   cols.forEach(([t, c]) => { const th = el("th", c === "ref" ? "" : c, t); if (c === "ref") th.append(refreshBtn()); if (t === "Frais CCC") th.title = "Simulation des frais de gradation CCC (formule Regular), selon le prix actuel de la carte : 1 à 50 € = 20 € ; 51 à 100 € = 23 € ; 101 à 500 € = 27 € ; plus de 500 € = 31 €. En option : Express +5 €, Super-Express +20 €, assurance 2 % de la valeur. Tarif relevé sur cccgrading.com le 20/10/2026 : vérifie-le avant d'envoyer tes cartes.";
-      if (t === "Prix actuel") th.title = "Prix Cardmarket mis à jour automatiquement chaque matin. Tu peux le remplacer avec le crayon ✎ : il ne bouge alors plus tout seul. Prix CCC réels : médiane des dernières ventes réussies sur Graded Card Center (en euros), sauf ceux que tu saisis."; head.append(th); });
+      if (t === "Prix actuel") th.title = "Prix Cardmarket de la version française en Near Mint (relevé sur Pokoya), mis à jour automatiquement chaque matin. Sans prix français, prix Cardmarket toutes langues. Tu peux le remplacer avec le crayon ✎ : il ne bouge alors plus tout seul. Prix CCC réels : médiane des dernières ventes réussies sur Graded Card Center (en euros), sauf ceux que tu saisis."; head.append(th); });
   const thead = el("thead"); thead.append(head);
   const tbody = el("tbody");
   table.append(thead, tbody);
@@ -788,6 +788,7 @@ function draw(updated) {
     mk.append(pr);
     const cap = c.source === "manuel" ? "prix saisi"
       : c.source === "fr" ? "prix relevé"
+      : c.source === "pokoya" ? "auto · FR (Pokoya)"
       : c.prix_marche != null && c.type !== "scelle" ? "auto · Cardmarket" : "";
     if (cap) {
       const m = el("div", "meta cap", cap); m.style.whiteSpace = "nowrap";
@@ -920,17 +921,21 @@ async function saveEdit(ev) {
   editUid = null;
   await change({ action: "update_entry", uid: c.uid, fields },
     cards => cards.map(x => { if (x.uid !== c.uid) return x;
-      const pm = fr != null ? fr : (x.source === "manuel" && x.prix_cm != null ? x.prix_cm : x.prix_marche);
+      const auto = autoPrice(x), pm = fr != null ? fr : (x.source === "manuel" ? auto.prix_marche : x.prix_marche);
       const ccc = { "10": c10, "9.5": c95, "9": c9 };
       return Object.assign({}, x, {
         prix_paye: paye == null ? 5.99 : paye, quantite: qn, prix_fr: fr,
         ccc10: c10 != null ? c10 : cccEst("10", pm), ccc95: c95 != null ? c95 : cccEst("9.5", pm), ccc9: c9 != null ? c9 : cccEst("9", pm),
         ccc_auto: Object.keys(ccc).filter(k => ccc[k] == null),
-        source: fr != null ? "manuel" : (x.source === "manuel" ? "cm" : x.source), prix_marche: pm }); }),
+        source: fr != null ? "manuel" : (x.source === "manuel" ? auto.source : x.source), prix_marche: pm }); }),
     v => v.watchlist.some(e => e.uid === c.uid && same(e.prix_paye, paye) && (e.quantite || 1) === qn && same(e.prix_fr, fr)
       && same((e.ccc || {})["10"], c10) && same((e.ccc || {})["9.5"], c95) && same((e.ccc || {})["9"], c9)));
   $("eSave").disabled = false;
 }
+
+// Prix automatique d'une carte quand on retire le prix saisi : prix FR Pokoya, sinon Cardmarket toutes langues.
+const autoPrice = x => x.prix_pokoya != null ? { source: "pokoya", prix_marche: x.prix_pokoya }
+  : { source: "cm", prix_marche: x.prix_cm != null ? x.prix_cm : x.prix_marche };
 
 function rangePts(pts) {
   if (chartRange === "all" || !pts.length) return pts;
@@ -962,7 +967,7 @@ function renderChart() {
   $("chartTitle").textContent = card ? "Modifier et suivre le prix" : "Évolution de la valeur";
   $("chartNote").textContent = "Estimation : " + (chartSel === "all"
     ? "chaque carte compte à partir de son premier relevé de prix (un relevé par matin)."
-    : "prix Cardmarket relevé chaque matin (toutes langues), ou ton prix saisi à la main.")
+    : "prix Cardmarket de la version française (Near Mint, via Pokoya) relevé chaque matin, ou ton prix saisi à la main.")
     + " La ligne en pointillés est ce que tu as investi.";
   if (!cards.length) { plot.replaceChildren(); sum.textContent = "Ajoute une carte pour voir son évolution."; return; }
   if (!pts.length) { plot.replaceChildren(); sum.textContent = "Pas encore de prix enregistré : le premier relevé arrive à la prochaine mise à jour du matin."; return; }
@@ -1274,7 +1279,7 @@ function editFr(c, mk) {
     ok.disabled = true;
     const good = await change({ action: "set_prix_fr", uid: c.uid, prix_fr: val },
       cards => cards.map(x => x.uid !== c.uid ? x : Object.assign({}, x, val == null
-        ? { prix_fr: null, source: "cm", prix_marche: x.prix_cm != null ? x.prix_cm : x.prix_marche }
+        ? Object.assign({ prix_fr: null }, autoPrice(x))
         : { prix_fr: val, source: "manuel", prix_marche: val })),
       v => v.watchlist.some(e => e.uid === c.uid && (e.prix_fr == null ? null : e.prix_fr) === val));
     if (!good) draw();
