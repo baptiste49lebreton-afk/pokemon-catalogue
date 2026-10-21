@@ -35,6 +35,7 @@ PAS = 1.035            # chaque tranche couvre +3,5 % : environ 200 pages par no
 SATURATION = 24        # une page n'affiche que ~24 à 30 ventes : au-delà, la tranche est coupée en deux
 MAX_PAGES = 2500       # garde-fou : au-delà, on ne coupe plus les tranches pleines
 AFFINAGE_MAX = 1200    # nombre de cartes dont on relit toutes les ventes (avant : 450)
+ANNEE_MIN = 2018       # cartes de 2018 et après seulement (les anciennes ne sont ni relevées ni gardées)
 LOOSE_MIN = 3          # en dessous, la carte ne vaut pas le coût de gradation
 
 _VENTE = re.compile(
@@ -101,8 +102,8 @@ def decouvrir(note, bas, haut, trouvees, compteur):
     page = get_page({"grades": json.dumps([note]), "minPrice": bas, "maxPrice": haut})
     compteur[0] += 1
     for v in ventes(page):
-        if v["edition"].lower().startswith("edition 1"):
-            continue  # le prix Cardmarket ne distingue pas la 1re édition
+        if v["edition"].lower().startswith("edition 1") or v["annee"] < ANNEE_MIN:
+            continue  # le prix Cardmarket ne distingue pas la 1re édition ; cartes avant 2018 écartées
         deja = trouvees.setdefault(cle(v), [])
         if not any((x["note"], x["prix"], x["date"], x["titre"]) == (v["note"], v["prix"], v["date"], v["titre"]) for x in deja):
             deja.append(v)
