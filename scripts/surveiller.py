@@ -9,7 +9,7 @@ Cartes à surveiller : toutes les cartes de Pokoya dont le prix FR Near Mint mon
    Démarrage : l'historique Pokoya d'une carte (sa fiche, une requête) est lu une seule fois, les cartes
    les plus chères d'abord, DEMARRAGE_MAX fiches par jour au plus.
 3. Le site reçoit data/watch.json (chiffré) : les cartes dont la moyenne 7 jours dépasse d'au moins
-   HAUSSE_MIN % la moyenne 30 jours, avec leurs moyennes et leurs 14 derniers jours.
+   HAUSSE_MIN % la moyenne 30 jours, avec leurs moyennes et tout leur historique (JOURS jours).
 
 Les prix CCC des cartes à surveiller viennent de la recherche (data/research.json), joints par le site.
 
@@ -137,7 +137,7 @@ def main():
         suivies += 1
         pct = (m["avg7"] / m["avg30"] - 1) * 100
         if pct >= HAUSSE_MIN:
-            j = sorted(h["prix"][k].items())[-14:]
+            j = sorted(h["prix"][k].items())[-JOURS:]
             hausse.append({k2: v for k2, v in c.items() if k2 not in ("code", "prix")} | m | {"j": j})
     data = {"updated": today.isoformat(), "pokoya": len(cartes), "suivies": suivies, "cartes": hausse}
     print(f"{suivies} cartes avec assez d'historique, {len(hausse)} en hausse d'au moins {HAUSSE_MIN} %.")
