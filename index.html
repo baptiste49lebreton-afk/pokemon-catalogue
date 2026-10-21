@@ -40,6 +40,7 @@ tr.pending { opacity:.55; }
 input, select { font:inherit; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--field); color:var(--fg); min-width:0; }
 button { font:600 .95rem system-ui, sans-serif; padding:10px 14px; border:0; border-radius:8px; background:var(--accent); color:var(--on-accent, #111); cursor:pointer; }
 button.ghost { background:transparent; color:var(--fg); border:1px solid var(--line); }
+button#rApply.pending { outline:3px solid var(--accent); outline-offset:2px; }
 button.x { background:transparent; color:var(--muted); padding:4px 8px; border:0; font-size:1.1rem; }
 button:disabled { opacity:.6; cursor:wait; }
 .err { color:var(--down); min-height:1.4em; margin:0; }
@@ -375,6 +376,10 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
 <label>Gain net min <select id="rGain"><option value="">Tous</option><option value="0">Positif (0 € et +)</option><option value="10">10 € et +</option><option value="25">25 € et +</option><option value="50">50 € et +</option><option value="100">100 € et +</option><option value="250">250 € et +</option><option value="500">500 € et +</option></select></label>
         <label>Ventes CCC min <select id="rN"><option value="1">1 vente</option><option value="2">2 ventes</option><option value="3">3 ventes</option></select></label>
         <label>Nom ou extension <input id="rQ" maxlength="60" placeholder="ex. Dracaufeu"></label>
+      </div>
+      <div class="setrow" style="margin-top:12px; align-items:center; gap:10px; flex-wrap:wrap">
+        <button type="button" id="rApply">Actualiser</button>
+        <span class="meta" id="rPending" aria-live="polite">Choisis tes filtres, puis clique sur « Actualiser » (ou appuie sur Entrée).</span>
       </div>
       <details class="tv"><summary>Frais pris en compte (modifiables)</summary>
         <div class="grid" style="margin-top:8px">
@@ -1638,13 +1643,26 @@ $("ranges").addEventListener("click", ev => { const b = ev.target.closest("butto
 $("tabs").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return;
   history.replaceState(null, "", b.dataset.p === "rech" ? "#recherche" : location.pathname + location.search); setPage(b.dataset.p); });
 window.addEventListener("hashchange", () => { if (state.password) setPage(location.hash === "#recherche" ? "rech" : "col"); });
+// Les filtres ne s'appliquent qu'au clic sur « Actualiser » (ou Entrée) : on lit alors les valeurs affichées.
+const R_FILTERS = [["rQ", "r_q", ""], ["rShip", "r_ship", "3"], ["rComm", "r_comm", "0"], ["rMin", "r_min", "5"], ["rMax", "r_max", ""], ["rRoi", "r_roi", ""], ["rGain", "r_gain", ""], ["rN", "r_n", "1"], ["rSpeed", "r_speed", "regular"]];
+function rMarkPending() {
+  const changed = R_FILTERS.some(([id, k, d]) => String($(id).value) !== String(pref.get(k, d)));
+  $("rApply").classList.toggle("pending", changed);
+  $("rPending").textContent = changed ? "Filtres modifiés : clique sur « Actualiser » pour les appliquer." : "Choisis tes filtres, puis clique sur « Actualiser » (ou appuie sur Entrée).";
+}
+function rApply() {
+  R_FILTERS.forEach(([id, k]) => pref.set(k, $(id).value));
+  rMarkPending(); renderResearch();
+}
 [["rQ", "r_q", ""], ["rShip", "r_ship", "3"], ["rComm", "r_comm", "0"]].forEach(([id, k, d]) => {
-  $(id).value = pref.get(k, d); $(id).addEventListener("input", () => { pref.set(k, $(id).value); renderResearch(); }); });
+  $(id).value = pref.get(k, d); $(id).addEventListener("input", rMarkPending);
+  $(id).addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); rApply(); } }); });
 [["rMin", "r_min", "5"], ["rMax", "r_max", ""], ["rRoi", "r_roi", ""], ["rGain", "r_gain", ""], ["rN", "r_n", "1"], ["rSpeed", "r_speed", "regular"]].forEach(([id, k, d]) => {
 const s = $(id), v0 = pref.get(k, d);
 if (id === "rMin" && v0 === "") pref.set(k, "0");
 else if (["rMin", "rMax", "rRoi", "rGain"].includes(id) && v0 !== "" && ![...s.options].some(o => o.value === v0)) s.add(new Option(String(v0).replace(".", ",") + (id === "rRoi" ? " %" : " €"), v0));
-  $(id).value = pref.get(k, d); $(id).addEventListener("change", () => { pref.set(k, $(id).value); renderResearch(); }); });
+  $(id).value = pref.get(k, d); $(id).addEventListener("change", rMarkPending); });
+$("rApply").addEventListener("click", rApply);
 $("rNote").addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) { pref.set("r_note", b.dataset.n); renderResearch(); } });
 $("cQ").addEventListener("input", renderCardSearch);
 $("cRes").addEventListener("click", ev => { const b = ev.target.closest("button.cr"); if (b && cardShown[+b.dataset.i]) { cardSel = cardShown[+b.dataset.i]; renderCardSearch(); } });
