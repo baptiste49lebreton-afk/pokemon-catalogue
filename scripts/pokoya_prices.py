@@ -28,6 +28,7 @@ _EXT = re.compile(r'"series_code":"([^"]+)","set_name":"((?:[^"\\]|\\.)*)"')
 
 _slugs = None   # {code d'extension: nom de la page}
 _noms = {}      # {nom d'extension simplifié: code d'extension}
+_infos = {}     # {code d'extension: {"nom": nom français, "sortie": date ISO}}
 _cartes = {}    # {code d'extension: {numéro: carte Pokoya}}
 _echecs = {}    # {page: erreur} : pages qui n'ont pas répondu pendant ce relevé
 
@@ -81,6 +82,17 @@ def _numero(n):
     return n or "0"
 
 
+def cle(code, numero):
+    """Clé d'une carte, la même partout (historique, recherche, cartes à surveiller)."""
+    return f"fr:{code}:{_numero(numero)}"
+
+
+def infos(code):
+    """{"nom": nom français, "sortie": date ISO ou None} d'une extension."""
+    extensions()
+    return _infos.get(code) or {"nom": code, "sortie": None}
+
+
 def extensions():
     """{code d'extension: nom de la page Pokoya}, lu une seule fois."""
     global _slugs
@@ -88,12 +100,20 @@ def extensions():
         page = _get("/extensions")
         par_nom = {htmllib.unescape(nom): slug for slug, nom in _LIEN.findall(page)}
         slugs = {}
-        for code, nom in _EXT.findall(_donnees(page)):
+        donnees = _donnees(page)
+        for code, nom in _EXT.findall(donnees):
             nom = json.loads('"' + nom + '"')
             slug = par_nom.get(nom)
             if slug:
                 slugs[code] = slug
                 _noms.setdefault(_simple(nom), code)
+                _infos[code] = {"nom": nom, "sortie": None}
+        try:
+            for e in _liste(donnees, "extensions", "liste des extensions"):
+                if e.get("series_code") in _infos:
+                    _infos[e["series_code"]]["sortie"] = e.get("set_release_date")
+        except ValueError:
+            pass  # la date de sortie n'est qu'un plus
         if not slugs:
             _echecs["/extensions"] = ValueError("liste des extensions Pokoya illisible")
             raise _echecs["/extensions"]

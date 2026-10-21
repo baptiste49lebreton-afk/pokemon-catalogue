@@ -430,7 +430,7 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
   <section id="watchPage" hidden>
     <div class="panel">
       <h2>Cartes à surveiller</h2>
-      <p class="help" style="margin-top:0">Les cartes dont le prix monte vite : moyenne des 7 derniers jours comparée à celle des 30 derniers jours. Prix Cardmarket de la version française en Near Mint (relevé sur Pokoya, comme ta collection), relevé chaque matin. Clique sur une carte pour voir son évolution et ses prix CCC.</p>
+      <p class="help" style="margin-top:0">Les cartes dont le prix monte vite, parmi toutes les cartes connues de Pokoya (prix FR d'au moins 1 €) : moyenne des 7 derniers jours comparée à celle des 30 derniers jours. Prix Cardmarket de la version française en Near Mint (relevé sur Pokoya, comme ta collection), relevé chaque matin. Clique sur une carte pour voir son évolution et ses prix CCC.</p>
       <div class="grid" style="margin-top:12px">
         <label>Hausse minimum <select id="wUp"><option value="5">+5 % et plus</option><option value="10">+10 % et plus</option><option value="15">+15 % et plus</option><option value="20">+20 % et plus</option><option value="30">+30 % et plus</option><option value="50">+50 % et plus</option><option value="100">+100 % et plus</option><option value="200">+200 % et plus</option><option value="300">+300 % et plus</option><option value="500">+500 % et plus</option></select></label>
         <label>Prix minimum <select id="wMin"><option value="0">Aucun minimum</option><option value="5">5 €</option><option value="10">10 €</option><option value="20">20 €</option><option value="50">50 €</option><option value="100">100 €</option><option value="200">200 €</option></select></label>
@@ -1296,7 +1296,7 @@ function setPage(p) {
 async function loadResearch() {
   $("rInfo").textContent = "Chargement de la recherche…";
   try { research = await loadVault("research.json"); researchErr = ""; await mergeFrPrices();
-    try { watchHist = (await loadVault("watch_history.json")).days || {}; } catch (e) { watchHist = {}; } }
+    try { watch = await loadVault("watch.json"); } catch (e) { watch = null; } }
   catch (e) { researchErr = e.message === "absent" ? "La première recherche sera prête après le relevé automatique de demain matin." : "Recherche indisponible pour le moment."; }
   renderResearch();
 }
@@ -1304,6 +1304,7 @@ async function loadResearch() {
 const ANNEE_MIN = 2018;
 async function mergeFrPrices() {
   research.cartes = research.cartes.filter(c => Number(c.annee) >= ANNEE_MIN && c.fr);   // un ancien relevé peut contenir des prix toutes langues
+  researchByKey = new Map(research.cartes.map(c => [c.wkey, c]));
 }
 const rNum = (k, d) => { const v = parseFloat(String(pref.get(k, "")).replace(",", ".")); return isNaN(v) || v < 0 ? d : v; };
 // Hype du Pokémon (0-100) : estimation de popularité auprès des collectionneurs (cartes les plus gradées : Pikachu, Dracaufeu, Gengar, Mewtwo, Mew, Noctali, Évoli...).
@@ -1333,7 +1334,8 @@ function liquidity(c, s) {
   return { score, days, hype, label: lvl[0], cls: lvl[1] };
 }
 // ---------- page « À surveiller » : cartes dont le prix monte vite ----------
-let watchHist = {};   // historique jour par jour (data/watch_history.json) : { date: { clé de la carte (c.wkey): prix } }
+let watch = null;     // cartes à surveiller (data/watch.json) : toutes les cartes Pokoya en hausse, avec moyennes et 14 derniers jours
+let researchByKey = new Map();   // carte de la recherche par clé (prix CCC d'une carte à surveiller)
 [["wUp", "w_up", "20"], ["wMin", "w_min", "10"], ["wMax", "w_max", ""], ["wSort", "w_sort", "pct"]].forEach(([id, k, d]) => {
   const v = pref.get(k, d), sel = $(id);
   if (v !== "" && ![...sel.options].some(o => o.value === v)) sel.add(new Option(v + (id === "wUp" ? " %" : " €"), v));
@@ -1358,16 +1360,16 @@ function cccLine(c) {
 }
 function watchDetail(c) {
   const box = el("div"); box.style.cssText = "display:flex; flex-wrap:wrap; gap:8px 28px; padding:4px 2px 10px";
-  const cm = c.cm, ref = cm.avg30;
+  const ref = c.avg30, r = researchByKey.get(c.k) || {};
   box.append(miniTable("Évolution du prix (français Near Mint, Pokoya)", ["", "Prix", "vs moy. 30 j"], [
-    ["Moyenne 30 jours", fmt(cm.avg30), ""], ["Moyenne 7 jours", fmt(cm.avg7), variation(cm.avg7, ref)],
-    ["Moyenne 1 jour", fmt(cm.avg1), variation(cm.avg1, ref)], ["Tendance", fmt(cm.trend), variation(cm.trend, ref)]].filter(r => r[1] !== "—")));
-  const days = Object.keys(watchHist).sort().map(d => [d, (watchHist[d] || {})[c.wkey]]).filter(p => p[1] > 0);
+    ["Moyenne 30 jours", fmt(c.avg30), ""], ["Moyenne 7 jours", fmt(c.avg7), variation(c.avg7, ref)],
+    ["Moyenne 1 jour", fmt(c.avg1), variation(c.avg1, ref)]].filter(x => x[1] !== "—")));
+  const days = (c.j || []).filter(p => p[1] > 0);
   box.append(days.length > 1
     ? miniTable("Jour par jour", ["Jour", "Prix", "Variation"], dailyRows(days))
     : el("p", "meta", "L'historique jour par jour se remplit à partir de demain."));
   box.append(miniTable("Prix en CCC (ventes Graded Card Center)", ["Note", "Prix", "Ventes", "Dernière"], ["10", "9.5", "9"].map(n => {
-    const s = c.ccc && c.ccc[n];
+    const s = r.ccc && r.ccc[n];
     return ["CCC " + n, s ? fmt(s.prix) : "—", s ? s.n : "0", s ? shortDay(s.derniere) : ""]; })));
   return box;
 }
@@ -1397,27 +1399,29 @@ function watchCell(c, rank, extraText) {
 function renderWatch() {
   const up = Number(pref.get("w_up", "20")) || 20, min = rNum("w_min", 10), max = rNum("w_max", Infinity), sort = pref.get("w_sort", "pct");
   const box = $("wList"), colBox = $("wCol");
-  if (!research) { $("wInfo").textContent = researchErr; box.replaceChildren(); colBox.replaceChildren(); return; }
+  if (!research && !watch) { $("wInfo").textContent = researchErr; box.replaceChildren(); colBox.replaceChildren(); return; }
   const range = (min ? " ≥ " + min + " €" : "") + (max < Infinity ? " ≤ " + max + " €" : "");
-  // 1. cartes du classement : moyenne 7 jours / moyenne 30 jours (prix FR Pokoya)
-  const withAvg = research.cartes.filter(c => c.cm && c.cm.avg7 > 0 && c.cm.avg30 > 0);
-  const rows = withAvg.map(c => ({ c, pct: (c.cm.avg7 / c.cm.avg30 - 1) * 100, gain: c.cm.avg7 - c.cm.avg30 }))
-    .filter(r => r.pct >= up && r.c.cm.avg7 >= min && r.c.cm.avg7 <= max)
-    .sort((a, b) => sort === "gain" ? b.gain - a.gain : sort === "prix_desc" ? b.c.cm.avg7 - a.c.cm.avg7 : sort === "prix_asc" ? a.c.cm.avg7 - b.c.cm.avg7 : b.pct - a.pct);
-  $("wInfo").textContent = withAvg.length
-    ? "Relevé du " + fmtDay(research.updated) + " · " + withAvg.length + " cartes suivies · " + rows.length + " en hausse d'au moins " + up + " % (prix moyen 7 jours" + (range || " : tous") + ")."
+  // 1. toutes les cartes Pokoya en hausse : moyenne 7 jours / moyenne 30 jours (prix FR)
+  const all = (watch && watch.cartes) || [];
+  const rows = all.map(c => ({ c, pct: (c.avg7 / c.avg30 - 1) * 100, gain: c.avg7 - c.avg30 }))
+    .filter(r => r.pct >= up && r.c.avg7 >= min && r.c.avg7 <= max)
+    .sort((a, b) => sort === "gain" ? b.gain - a.gain : sort === "prix_desc" ? b.c.avg7 - a.c.avg7 : sort === "prix_asc" ? a.c.avg7 - b.c.avg7 : b.pct - a.pct);
+  $("wInfo").textContent = watch
+    ? "Relevé du " + fmtDay(watch.updated) + " · " + watch.pokoya + " cartes Pokoya à 1 € ou plus, " + watch.suivies + " avec assez d'historique · "
+      + rows.length + " en hausse d'au moins " + up + " % (prix moyen 7 jours" + (range || " : tous") + ")" + (rows.length > 300 ? ", les 300 premières affichées." : ".")
     : "";
-  if (!withAvg.length) box.replaceChildren(el("p", "help", "Les moyennes sur 7 et 30 jours arrivent avec le prochain relevé automatique (demain matin). Reviens ensuite."));
-  else if (!rows.length) box.replaceChildren(el("p", "help", "Aucune carte du classement ne correspond : baisse la hausse minimum ou élargis les prix, puis clique sur « Actualiser »."));
+  if (!watch) box.replaceChildren(el("p", "help", "La liste de toutes les cartes Pokoya arrive avec le prochain relevé automatique (chaque matin à 4 h 15, heure UTC). Reviens ensuite."));
+  else if (!rows.length) box.replaceChildren(el("p", "help", watch.suivies ? "Aucune carte ne correspond : baisse la hausse minimum ou élargis les prix, puis clique sur « Actualiser »." : "L'historique des cartes se construit : il faut au moins 10 jours de prix pour calculer les moyennes. Reviens dans quelques jours."));
   else {
-    const trs = rows.slice(0, 150).map((r, i) => {
-      const { c } = r, tr = el("tr"), [imgCell, info] = watchCell(c, i + 1, cccLine(c));
+    const trs = rows.slice(0, 300).map((r, i) => {
+      const { c } = r, rc = researchByKey.get(c.k), tr = el("tr"), [imgCell, info] = watchCell(c, i + 1, cccLine(rc || {}));
       const a = (v, lab) => { const td = el("td", "r"); td.append(el("div", "money", fmt(v))); td.dataset.label = lab; return td; };
       const pct = el("td", "r big up"); pct.append(el("span", "pill up", signedPct(r.pct))); pct.dataset.label = "Hausse";
-      const cm = el("td", "r"), link = el("a", "meta", "Cardmarket ↗"), fiche = el("a", "meta", "Fiche ↗");
-      link.href = cmLink(c); fiche.href = location.pathname + "?carte=" + encodeURIComponent(cardKey(c)) + "#fiche";
-      [link, fiche].forEach(x => { x.target = "_blank"; x.rel = "noopener noreferrer"; x.style.cssText = "display:block; color:var(--muted); text-decoration:underline"; cm.append(x); });
-      tr.append(imgCell, info, a(c.cm.avg30, "Moy. 30 j"), a(c.cm.avg7, "Moy. 7 j"), a(c.cm.avg1, "Moy. 1 j"), pct, cm);
+      const cm = el("td", "r"), link = el("a", "meta", "Pokoya ↗"), links = [link];
+      link.href = "https://pokoya.app/carte/" + c.slug;
+      if (rc) { const fiche = el("a", "meta", "Fiche ↗"); fiche.href = location.pathname + "?carte=" + encodeURIComponent(cardKey(rc)) + "#fiche"; links.push(fiche); }
+      links.forEach(x => { x.target = "_blank"; x.rel = "noopener noreferrer"; x.style.cssText = "display:block; color:var(--muted); text-decoration:underline"; cm.append(x); });
+      tr.append(imgCell, info, a(c.avg30, "Moy. 30 j"), a(c.avg7, "Moy. 7 j"), a(c.avg1, "Moy. 1 j"), pct, cm);
       tr.classList.add("clk"); tr.tabIndex = 0; tr.title = "Voir l'évolution et les prix CCC";
       const open = () => toggleDetail(tr, () => watchDetail(c), 7);
       tr.addEventListener("click", ev => { if (!ev.target.closest("a, button")) open(); });

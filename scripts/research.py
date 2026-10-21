@@ -9,8 +9,7 @@ Recherche des cartes les plus rentables à acheter en loose puis à faire grader
 3. Affinage : pour les cartes les plus prometteuses, on relit toutes leurs ventes CCC sur GCC
    (même méthode que scripts/gcc_prices.py : médiane des 3 dernières ventes de chaque note).
 
-Cartes à surveiller : data/watch_history.json garde le prix FR du jour de chaque carte ; les moyennes
-1, 7 et 30 jours sont calculées sur cet historique.
+Les cartes à surveiller (toutes les cartes Pokoya) sont calculées à part : scripts/surveiller.py.
 
 Résultat chiffré avec le mot de passe du site dans data/research.json. Les frais (gradation, envoi,
 assurance) sont appliqués par le site, avec les hypothèses que tu règles toi-même.
@@ -34,7 +33,6 @@ import update_prices  # chiffrement et accès TCGdex déjà utilisés pour le co
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "data" / "research.json"
-HIST = ROOT / "data" / "watch_history.json"
 PAUSE_S = 2            # politesse envers GCC : 2 s entre deux pages
 PRIX_MIN, PRIX_MAX = 6, 6000    # tranches de prix de vente CCC parcourues (€)
 PAS = 1.035            # chaque tranche couvre +3,5 % : environ 200 pages par note
@@ -42,10 +40,7 @@ SATURATION = 24        # une page n'affiche que ~24 à 30 ventes : au-delà, la 
 MAX_PAGES = 2500       # garde-fou : au-delà, on ne coupe plus les tranches pleines
 AFFINAGE_MAX = 1200    # nombre de cartes dont on relit toutes les ventes (avant : 450)
 ANNEE_MIN = 2018       # cartes de 2018 et après seulement (les anciennes ne sont ni relevées ni gardées)
-LOOSE_MIN = 3          # en dessous, la carte ne vaut pas le coût de gradation
-HIST_JOURS = 120       # jours gardés dans data/watch_history.json
-HIST_MIN_JOURS = 10    # historique FR minimum (en jours) pour calculer les moyennes 7 et 30 jours
-DEMARRAGE_MAX = 1500   # fiches Pokoya lues par relevé pour démarrer l'historique des nouvelles cartes
+LOOSE_MIN = 1          # € : en dessous de 1 €, la carte est ignorée (même règle que les cartes à surveiller)
 
 _VENTE = re.compile(
     r"CCC (?P<note>10 GL|10 Mint|\d+(?:\.5)?) (?P<titre>[^\n]+)\n"
@@ -179,60 +174,6 @@ def prix_fr(v, sid):
         return None
 
 
-def lire_historique(password):
-    """data/watch_history.json : {"v": 3, "days": {date: {clé: prix FR}}, "demarre": [clés]}.
-    Les anciens formats (avec des prix toutes langues) sont abandonnés."""
-    if not password or not HIST.exists():
-        return {"v": 3, "days": {}, "demarre": []}
-    try:
-        h = update_prices.decrypt(json.loads(HIST.read_text(encoding="utf-8")), password) or {}
-    except Exception as exc:
-        print(f"  historique illisible, on repart de zéro ({exc})")
-        h = {}
-    if h.get("v") != 3:
-        return {"v": 3, "days": {}, "demarre": []}
-    h.setdefault("days", {})
-    h.setdefault("demarre", [])
-    return h
-
-
-def maj_historique(h, cartes):
-    """Ajoute le prix FR du jour de chaque carte, démarre l'historique des nouvelles cartes avec celui de Pokoya,
-    puis calcule les moyennes 1, 7 et 30 jours sur cet historique."""
-    today = date.today()
-    jours = h["days"]
-    jours[today.isoformat()] = {c["wkey"]: c["loose"] for c in cartes if c.get("loose")}
-    demarre, lues = set(h["demarre"]), 0
-    for c in cartes:
-        if not c.get("fr") or c["wkey"] in demarre or lues >= DEMARRAGE_MAX:
-            continue
-        try:
-            lues += 1
-            for d, prix in pokoya_prices.historique(c["fr"]["code"], c["numero"]).items():
-                jours.setdefault(d, {}).setdefault(c["wkey"], prix)
-            demarre.add(c["wkey"])
-        except Exception as exc:
-            print(f"  historique Pokoya indisponible pour {c['nom']} : {exc}")
-    for d in sorted(jours)[:-HIST_JOURS]:
-        del jours[d]
-    h["demarre"] = sorted(demarre)
-    for c in cartes:
-        c["cm"] = moyennes_historique(jours, c["wkey"], today)
-    print(f"Historique des prix : {len(jours)} jour(s) gardé(s), {lues} fiche(s) Pokoya lue(s) pour le démarrer.")
-
-
-def moyennes_historique(jours, cle, today):
-    """Moyennes 1, 7 et 30 jours d'une carte sur l'historique (None tant qu'il couvre moins de HIST_MIN_JOURS)."""
-    pts = sorted((date.fromisoformat(d), p[cle]) for d, p in jours.items() if p.get(cle))
-    if not pts or (today - pts[0][0]).days < HIST_MIN_JOURS:
-        return None
-
-    def moy(n):
-        v = [x for d, x in pts if (today - d).days < n]
-        return round(sum(v) / len(v), 2) if v else None
-    return {"avg1": pts[-1][1], "avg7": moy(7), "avg30": moy(30), "trend": pts[-1][1]}
-
-
 # ---------- principal ----------
 def main():
     plain = "--plain" in sys.argv
@@ -295,12 +236,10 @@ def main():
             "nom": card.get("name") or v["titre"], "titre_gcc": v["titre"],
             "set": v["set"], "numero": v["numero"], "annee": v["annee"],
             "image": f"{card['image']}/low.webp" if card.get("image") else None,
-            "loose": c["loose"], "fr": c["fr"], "cm_id": c["cm_id"], "cm": None,  # moyennes FR : maj_historique
-            "wkey": f"fr:{c['fr']['code']}:{v['numero']}",
+            "loose": c["loose"], "fr": c["fr"], "cm_id": c["cm_id"],
+            "wkey": pokoya_prices.cle(c["fr"]["code"], v["numero"]),  # même clé que les cartes à surveiller
             "ccc": stats,
         })
-    hist = lire_historique(None if plain else password)
-    maj_historique(hist, cartes)
     data = {"updated": date.today().isoformat(), "cartes": cartes,
             "source": {"pages_gcc": pages, "cartes_vues": len(trouvees)}}
     print(f"{len(cartes)} cartes retenues pour la recherche.")
@@ -309,7 +248,6 @@ def main():
         Path(sys.argv[-1]).write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     else:
         OUT.write_text(json.dumps(update_prices.encrypt(data, password)), encoding="utf-8")
-        HIST.write_text(json.dumps(update_prices.encrypt(hist, password)), encoding="utf-8")
         print("Recherche chiffrée enregistrée dans data/research.json.")
 
 
