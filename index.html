@@ -40,6 +40,11 @@ tr.pending { opacity:.55; }
 input, select { font:inherit; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--field); color:var(--fg); min-width:0; }
 button { font:600 .95rem system-ui, sans-serif; padding:10px 14px; border:0; border-radius:8px; background:var(--accent); color:var(--on-accent, #111); cursor:pointer; }
 button.ghost { background:transparent; color:var(--fg); border:1px solid var(--line); }
+.mini { border-collapse:collapse; font-size:.85rem; margin-top:4px; }
+.mini th, .mini td { padding:3px 12px 3px 0; text-align:left; border:0 !important; background:none !important; font-weight:500; white-space:nowrap; }
+.mini th { color:var(--muted); font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; }
+.mini .r { text-align:right; padding-right:0; padding-left:12px; }
+.wdetail td { grid-column:1 / -1; }
 button#rApply.pending { outline:3px solid var(--accent); outline-offset:2px; }
 button.x { background:transparent; color:var(--muted); padding:4px 8px; border:0; font-size:1.1rem; }
 button:disabled { opacity:.6; cursor:wait; }
@@ -399,10 +404,12 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
   <section id="watchPage" hidden>
     <div class="panel">
       <h2>Cartes à surveiller</h2>
-      <p class="help" style="margin-top:0">Les cartes dont le prix monte vite : moyenne Cardmarket des 7 derniers jours comparée à celle des 30 derniers jours. Prix Cardmarket toutes langues (pas le prix français), relevés chaque matin.</p>
+      <p class="help" style="margin-top:0">Les cartes dont le prix monte vite : moyenne Cardmarket des 7 derniers jours comparée à celle des 30 derniers jours. Prix Cardmarket toutes langues (pas le prix français), relevés chaque matin. Clique sur une carte pour voir son évolution et ses prix CCC.</p>
       <div class="grid" style="margin-top:12px">
-        <label>Hausse minimum <select id="wUp"><option value="5">+5 % et plus</option><option value="10">+10 % et plus</option><option value="15">+15 % et plus</option><option value="20">+20 % et plus</option><option value="30">+30 % et plus</option><option value="50">+50 % et plus</option><option value="100">+100 % et plus</option><option value="200">+200 % et plus</option></select></label>
-        <label>Prix minimum <select id="wMin"><option value="5">5 €</option><option value="10">10 €</option><option value="20">20 €</option><option value="50">50 €</option><option value="100">100 €</option></select></label>
+        <label>Hausse minimum <select id="wUp"><option value="5">+5 % et plus</option><option value="10">+10 % et plus</option><option value="15">+15 % et plus</option><option value="20">+20 % et plus</option><option value="30">+30 % et plus</option><option value="50">+50 % et plus</option><option value="100">+100 % et plus</option><option value="200">+200 % et plus</option><option value="300">+300 % et plus</option><option value="500">+500 % et plus</option></select></label>
+        <label>Prix minimum <select id="wMin"><option value="0">Aucun minimum</option><option value="5">5 €</option><option value="10">10 €</option><option value="20">20 €</option><option value="50">50 €</option><option value="100">100 €</option><option value="200">200 €</option></select></label>
+        <label>Prix maximum <select id="wMax"><option value="">Sans limite</option><option value="10">10 €</option><option value="20">20 €</option><option value="50">50 €</option><option value="100">100 €</option><option value="200">200 €</option><option value="500">500 €</option><option value="1000">1000 €</option><option value="2000">2000 €</option></select></label>
+        <label>Classer par <select id="wSort"><option value="pct">Plus forte évolution (%)</option><option value="gain">Plus forte hausse en €</option><option value="prix_desc">Prix le plus haut</option><option value="prix_asc">Prix le plus bas</option></select></label>
       </div>
       <div class="setrow" style="margin-top:12px; align-items:center; gap:10px; flex-wrap:wrap">
         <button type="button" id="wApply">Actualiser</button>
@@ -1254,7 +1261,8 @@ function setPage(p) {
 }
 async function loadResearch() {
   $("rInfo").textContent = "Chargement de la recherche…";
-  try { research = await loadVault("research.json"); researchErr = ""; await mergeFrPrices(); }
+  try { research = await loadVault("research.json"); researchErr = ""; await mergeFrPrices();
+    try { watchHist = (await loadVault("watch_history.json")).days || {}; } catch (e) { watchHist = {}; } }
   catch (e) { researchErr = e.message === "absent" ? "La première recherche sera prête après le relevé automatique de demain matin." : "Recherche indisponible pour le moment."; }
   renderResearch();
 }
@@ -1297,15 +1305,56 @@ function liquidity(c, s) {
   return { score, days, hype, label: lvl[0], cls: lvl[1] };
 }
 // ---------- page « À surveiller » : cartes dont le prix monte vite ----------
-[["wUp", "w_up", "20"], ["wMin", "w_min", "10"]].forEach(([id, k, d]) => { $(id).value = pref.get(k, d); if ($(id).value === "") $(id).value = d; });
-$("wApply").addEventListener("click", () => { pref.set("w_up", $("wUp").value); pref.set("w_min", $("wMin").value); renderWatch(); });
+let watchHist = {};   // historique jour par jour (data/watch_history.json) : { date: { cm_id: tendance } }
+[["wUp", "w_up", "20"], ["wMin", "w_min", "10"], ["wMax", "w_max", ""], ["wSort", "w_sort", "pct"]].forEach(([id, k, d]) => {
+  const v = pref.get(k, d), sel = $(id);
+  if (v !== "" && ![...sel.options].some(o => o.value === v)) sel.add(new Option(v + (id === "wUp" ? " %" : " €"), v));
+  sel.value = v; if (sel.value !== v) sel.value = d; });
+$("wApply").addEventListener("click", () => { [["wUp", "w_up"], ["wMin", "w_min"], ["wMax", "w_max"], ["wSort", "w_sort"]].forEach(([id, k]) => pref.set(k, $(id).value)); renderWatch(); });
+const shortDay = d => new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+function miniTable(title, heads, rows) {
+  const box = el("div"), t = el("table", "mini"), th = el("tr");
+  box.append(el("div", "meta", title));
+  heads.forEach((h, i) => th.append(el("th", i ? "r" : "", h))); t.append(th);
+  rows.forEach(r => { const tr = el("tr"); r.forEach((v, i) => tr.append(el("td", i ? "r" : "", v == null ? "" : String(v)))); t.append(tr); });
+  box.append(t); return box;
+}
+const variation = (v, ref) => ref > 0 && v > 0 ? signedPct((v / ref - 1) * 100) : "";
+function dailyRows(days) {   // [[date, prix]] trié ; 14 derniers jours, le plus récent en haut
+  const out = days.map((p, i) => [shortDay(p[0]), fmt(p[1]), i ? variation(p[1], days[i - 1][1]) : ""]);
+  return out.slice(-14).reverse();
+}
+function cccLine(c) {
+  const parts = ["10", "9.5", "9"].filter(n => c.ccc && c.ccc[n]).map(n => "CCC " + n + " ≈ " + fmt(c.ccc[n].prix));
+  return parts.length ? parts.join(" · ") : "Pas de vente CCC relevée";
+}
+function watchDetail(c) {
+  const box = el("div"); box.style.cssText = "display:flex; flex-wrap:wrap; gap:8px 28px; padding:4px 2px 10px";
+  const cm = c.cm, ref = cm.avg30;
+  box.append(miniTable("Évolution du prix (Cardmarket, toutes langues)", ["", "Prix", "vs moy. 30 j"], [
+    ["Moyenne 30 jours", fmt(cm.avg30), ""], ["Moyenne 7 jours", fmt(cm.avg7), variation(cm.avg7, ref)],
+    ["Moyenne 1 jour", fmt(cm.avg1), variation(cm.avg1, ref)], ["Tendance", fmt(cm.trend), variation(cm.trend, ref)]].filter(r => r[1] !== "—")));
+  const days = Object.keys(watchHist).sort().map(d => [d, (watchHist[d] || {})[String(c.cm_id)]]).filter(p => p[1] > 0);
+  box.append(days.length > 1
+    ? miniTable("Jour par jour (tendance)", ["Jour", "Prix", "Variation"], dailyRows(days))
+    : el("p", "meta", "L'historique jour par jour se remplit à partir de demain."));
+  box.append(miniTable("Prix en CCC (ventes Graded Card Center)", ["Note", "Prix", "Ventes", "Dernière"], ["10", "9.5", "9"].map(n => {
+    const s = c.ccc && c.ccc[n];
+    return ["CCC " + n, s ? fmt(s.prix) : "—", s ? s.n : "0", s ? shortDay(s.derniere) : ""]; })));
+  return box;
+}
+function toggleDetail(tr, build, cols) {
+  const nxt = tr.nextElementSibling;
+  if (nxt && nxt.classList.contains("wdetail")) { nxt.remove(); return; }
+  const d = el("tr", "wdetail"), td = el("td"); td.colSpan = cols; td.append(build()); d.append(td); tr.after(d);
+}
 function watchTable(cols, rows) {
   const table = el("table"), thead = el("thead"), head = el("tr"), tbody = el("tbody");
   cols.forEach(([t, k]) => head.append(el("th", k, t)));
   thead.append(head); table.append(thead, tbody);
   rows.forEach(r => tbody.append(r)); return table;
 }
-function watchCell(c, rank, extra) {
+function watchCell(c, rank, extraText) {
   const imgCell = el("td", "img");
   if (validImg(c)) {
     const img = el("img"); img.src = c.image; img.alt = ""; img.loading = "lazy"; img.referrerPolicy = "no-referrer";
@@ -1314,31 +1363,37 @@ function watchCell(c, rank, extra) {
   const info = el("td"), name = el("div", "name");
   name.append(el("span", "rank", "#" + rank), c.nom);
   info.append(name, el("div", "meta", [c.set, c.numero, c.annee].filter(Boolean).join(" · ")));
-  if (extra) info.append(extra);
+  if (extraText) info.append(el("div", "meta other", extraText));
   return [imgCell, info];
 }
 function renderWatch() {
-  const up = Number(pref.get("w_up", "20")) || 20, min = Number(pref.get("w_min", "10")) || 10;
+  const up = Number(pref.get("w_up", "20")) || 20, min = rNum("w_min", 10), max = rNum("w_max", Infinity), sort = pref.get("w_sort", "pct");
   const box = $("wList"), colBox = $("wCol");
   if (!research) { $("wInfo").textContent = researchErr; box.replaceChildren(); colBox.replaceChildren(); return; }
+  const range = (min ? " ≥ " + min + " €" : "") + (max < Infinity ? " ≤ " + max + " €" : "");
   // 1. cartes du classement : moyenne 7 jours / moyenne 30 jours (Cardmarket, toutes langues)
   const withAvg = research.cartes.filter(c => c.cm && c.cm.avg7 > 0 && c.cm.avg30 > 0);
-  const rows = withAvg.map(c => ({ c, pct: (c.cm.avg7 / c.cm.avg30 - 1) * 100 })).filter(r => r.pct >= up && r.c.cm.avg7 >= min).sort((a, b) => b.pct - a.pct);
+  const rows = withAvg.map(c => ({ c, pct: (c.cm.avg7 / c.cm.avg30 - 1) * 100, gain: c.cm.avg7 - c.cm.avg30 }))
+    .filter(r => r.pct >= up && r.c.cm.avg7 >= min && r.c.cm.avg7 <= max)
+    .sort((a, b) => sort === "gain" ? b.gain - a.gain : sort === "prix_desc" ? b.c.cm.avg7 - a.c.cm.avg7 : sort === "prix_asc" ? a.c.cm.avg7 - b.c.cm.avg7 : b.pct - a.pct);
   $("wInfo").textContent = withAvg.length
-    ? "Relevé du " + fmtDay(research.updated) + " · " + withAvg.length + " cartes suivies · " + rows.length + " en hausse d'au moins " + up + " % (prix moyen 7 jours ≥ " + min + " €)."
+    ? "Relevé du " + fmtDay(research.updated) + " · " + withAvg.length + " cartes suivies · " + rows.length + " en hausse d'au moins " + up + " % (prix moyen 7 jours" + (range || " : tous") + ")."
     : "";
   if (!withAvg.length) box.replaceChildren(el("p", "help", "Les moyennes sur 7 et 30 jours arrivent avec le prochain relevé automatique (demain matin). Reviens ensuite."));
-  else if (!rows.length) box.replaceChildren(el("p", "help", "Aucune carte du classement ne monte autant en ce moment : baisse la hausse minimum ou le prix minimum, puis clique sur « Actualiser »."));
+  else if (!rows.length) box.replaceChildren(el("p", "help", "Aucune carte du classement ne correspond : baisse la hausse minimum ou élargis les prix, puis clique sur « Actualiser »."));
   else {
     const trs = rows.slice(0, 150).map((r, i) => {
-      const { c } = r, tr = el("tr"), [imgCell, info] = watchCell(c, i + 1);
+      const { c } = r, tr = el("tr"), [imgCell, info] = watchCell(c, i + 1, cccLine(c));
       const a = (v, lab) => { const td = el("td", "r"); td.append(el("div", "money", fmt(v))); td.dataset.label = lab; return td; };
       const pct = el("td", "r big up"); pct.append(el("span", "pill up", signedPct(r.pct))); pct.dataset.label = "Hausse";
-      const cm = el("td", "r"); const link = el("a", "meta", "Cardmarket ↗"); link.href = cmLink(c); link.target = "_blank"; link.rel = "noopener noreferrer";
-      link.style.cssText = "display:block; color:var(--muted); text-decoration:underline"; cm.append(link);
+      const cm = el("td", "r"), link = el("a", "meta", "Cardmarket ↗"), fiche = el("a", "meta", "Fiche ↗");
+      link.href = cmLink(c); fiche.href = location.pathname + "?carte=" + encodeURIComponent(cardKey(c)) + "#fiche";
+      [link, fiche].forEach(x => { x.target = "_blank"; x.rel = "noopener noreferrer"; x.style.cssText = "display:block; color:var(--muted); text-decoration:underline"; cm.append(x); });
       tr.append(imgCell, info, a(c.cm.avg30, "Moy. 30 j"), a(c.cm.avg7, "Moy. 7 j"), a(c.cm.avg1, "Moy. 1 j"), pct, cm);
-      tr.classList.add("clk"); tr.tabIndex = 0; tr.title = "Ouvrir la fiche de la carte dans un nouvel onglet";
-      tr.addEventListener("click", ev => { if (!ev.target.closest("a, button")) openFiche(c); });
+      tr.classList.add("clk"); tr.tabIndex = 0; tr.title = "Voir l'évolution et les prix CCC";
+      const open = () => toggleDetail(tr, () => watchDetail(c), 7);
+      tr.addEventListener("click", ev => { if (!ev.target.closest("a, button")) open(); });
+      tr.addEventListener("keydown", ev => { if (ev.key === "Enter" && ev.target === tr) open(); });
       return tr;
     });
     box.replaceChildren(watchTable([["", ""], ["Carte", ""], ["Moy. 30 j", "r"], ["Moy. 7 j", "r"], ["Moy. 1 j", "r"], ["Hausse", "r"], ["", "r"]], trs));
@@ -1355,17 +1410,23 @@ function renderWatch() {
     if (!past || !(past[1] > 0)) return;
     enoughHistory = true;
     const pct = (vNow / past[1] - 1) * 100;
-    if (pct >= up && vNow >= min) mine.push({ c, pct, past, vNow });
+    if (pct >= up && vNow >= min && vNow <= max) mine.push({ c, pct, past, vNow, days, gain: vNow - past[1] });
   });
-  mine.sort((a, b) => b.pct - a.pct);
-  if (!mine.length) colBox.replaceChildren(el("p", "help", enoughHistory ? "Aucune de tes cartes ne monte autant en ce moment." : "L'historique de ta collection est encore trop court (moins d'une semaine) pour repérer une hausse."));
+  mine.sort((a, b) => sort === "gain" ? b.gain - a.gain : sort === "prix_desc" ? b.vNow - a.vNow : sort === "prix_asc" ? a.vNow - b.vNow : b.pct - a.pct);
+  if (!mine.length) colBox.replaceChildren(el("p", "help", enoughHistory ? "Aucune de tes cartes ne correspond à ces réglages en ce moment." : "L'historique de ta collection est encore trop court (moins d'une semaine) pour repérer une hausse."));
   else {
     const trs = mine.map((r, i) => {
-      const tr = el("tr"), [imgCell, info] = watchCell(r.c, i + 1);
-      const before = el("td", "r"); before.append(el("div", "money", fmt(r.past[1])), el("div", "meta", "au " + fmtDay(r.past[0]))); before.dataset.label = "Avant";
+      const parts = [["10", r.c.ccc10], ["9.5", r.c.ccc95], ["9", r.c.ccc9]].filter(x => x[1] > 0).map(x => "CCC " + x[0] + " ≈ " + fmt(x[1]));
+      const tr = el("tr"), [imgCell, info] = watchCell(r.c, i + 1, parts.length ? parts.join(" · ") : "Pas de prix CCC");
+      const before = el("td", "r"); before.append(el("div", "money", fmt(r.past[1])), el("div", "meta", "au " + shortDay(r.past[0]))); before.dataset.label = "Avant";
       const now = el("td", "r"); now.append(el("div", "money", fmt(r.vNow))); now.dataset.label = "Maintenant";
       const pct = el("td", "r big up"); pct.append(el("span", "pill up", signedPct(r.pct))); pct.dataset.label = "Hausse";
-      tr.append(imgCell, info, before, now, pct); return tr;
+      tr.append(imgCell, info, before, now, pct);
+      tr.classList.add("clk"); tr.tabIndex = 0; tr.title = "Voir l'évolution jour par jour";
+      const open = () => toggleDetail(tr, () => { const b = el("div"); b.style.cssText = "padding:4px 2px 10px"; b.append(miniTable("Jour par jour (prix de la carte)", ["Jour", "Prix", "Variation"], dailyRows(r.days))); return b; }, 5);
+      tr.addEventListener("click", ev => { if (!ev.target.closest("a, button")) open(); });
+      tr.addEventListener("keydown", ev => { if (ev.key === "Enter" && ev.target === tr) open(); });
+      return tr;
     });
     colBox.replaceChildren(watchTable([["", ""], ["Carte", ""], ["Avant", "r"], ["Maintenant", "r"], ["Hausse", "r"]], trs));
   }
