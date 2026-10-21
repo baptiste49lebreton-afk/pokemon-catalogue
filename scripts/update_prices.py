@@ -537,6 +537,13 @@ def main():
             "ccc_auto": ccc_auto,
             "ccc_gcc": ccc_gcc,
         })
+        if source == "pokoya" and entry["uid"] not in vault.setdefault("pokoya_hist", []):
+            # passage au prix FR : les jours relevés par Pokoya remplacent l'ancien prix toutes langues
+            try:
+                history.setdefault(cid, {}).update(pokoya_prices.historique(set_code, entry["numero"]))
+                vault["pokoya_hist"].append(entry["uid"])
+            except Exception as exc:
+                print(f"  historique Pokoya indisponible pour {entry['nom']} : {exc}")
         if price is not None and (not failed or override):
             history.setdefault(cid, {})[today] = price
 

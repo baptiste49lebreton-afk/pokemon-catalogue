@@ -396,7 +396,7 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
     </div>
     <div class="panel">
       <h2>Acheter en loose, faire grader en CCC</h2>
-      <p class="help" style="margin-top:0">Classement des cartes françaises les plus rentables : prix loose Cardmarket (tendance, toutes langues) comparé aux ventes réussies en CCC sur Graded Card Center. Les frais de gradation, d'assurance et d'envoi sont déjà déduits.</p>
+      <p class="help" style="margin-top:0">Classement des cartes françaises les plus rentables : prix loose Cardmarket de la version française en Near Mint (relevé sur Pokoya, comme ta collection ; toutes langues seulement si Pokoya n'a pas de prix français) comparé aux ventes réussies en CCC sur Graded Card Center. Les frais de gradation, d'assurance et d'envoi sont déjà déduits.</p>
       <div class="setrow"><span class="label">Note visée</span>
         <div class="seg" id="rNote" role="group" aria-label="Note visée"><button type="button" data-n="10">CCC 10</button><button type="button" data-n="9.5">CCC 9.5</button><button type="button" data-n="9">CCC 9</button></div></div>
       <div class="setrow"><span class="label">Classer par</span>
@@ -425,13 +425,13 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
     </div>
     <p class="updated" id="rInfo"></p>
     <div class="wrap list rlist" id="rList"></div>
-    <p class="help" id="rNote2">À savoir : les ventes GCC sont des cartes françaises, alors que le prix Cardmarket mélange toutes les langues. Le prix CCC retenu est la médiane des 3 dernières ventes de la note (6 derniers mois en priorité). Une carte n'obtient pas toujours la note visée : regarde aussi ce que donnent les notes en dessous.</p>
+    <p class="help" id="rNote2">À savoir : les ventes GCC sont des cartes françaises, comparées au prix loose français (Pokoya). Les cartes marquées « toutes langues » n'ont pas de prix français : leur prix loose mélange les langues. Le prix CCC retenu est la médiane des 3 dernières ventes de la note (6 derniers mois en priorité). Une carte n'obtient pas toujours la note visée : regarde aussi ce que donnent les notes en dessous.</p>
     <p class="help" id="rLiq2">Liquidité (sur 100) : 65 % l'activité des ventes CCC de la note visée (date de la dernière vente et nombre de ventes récentes), 35 % la hype du Pokémon (estimation de sa popularité auprès des collectionneurs, étoiles de 1 à 5). Sans vente depuis plus de 60 jours, une carte ne passe jamais « Liquide » (et reste « Lent » après 4 mois), même très populaire. C'est un indicateur, pas une garantie de revente.</p>
   </section>
   <section id="watchPage" hidden>
     <div class="panel">
       <h2>Cartes à surveiller</h2>
-      <p class="help" style="margin-top:0">Les cartes dont le prix monte vite : moyenne Cardmarket des 7 derniers jours comparée à celle des 30 derniers jours. Prix Cardmarket toutes langues (pas le prix français), relevés chaque matin. Clique sur une carte pour voir son évolution et ses prix CCC.</p>
+      <p class="help" style="margin-top:0">Les cartes dont le prix monte vite : moyenne des 7 derniers jours comparée à celle des 30 derniers jours. Prix Cardmarket de la version française en Near Mint (relevé sur Pokoya, comme ta collection), relevé chaque matin ; toutes langues seulement pour les cartes sans prix français. Clique sur une carte pour voir son évolution et ses prix CCC.</p>
       <div class="grid" style="margin-top:12px">
         <label>Hausse minimum <select id="wUp"><option value="5">+5 % et plus</option><option value="10">+10 % et plus</option><option value="15">+15 % et plus</option><option value="20">+20 % et plus</option><option value="30">+30 % et plus</option><option value="50">+50 % et plus</option><option value="100">+100 % et plus</option><option value="200">+200 % et plus</option><option value="300">+300 % et plus</option><option value="500">+500 % et plus</option></select></label>
         <label>Prix minimum <select id="wMin"><option value="0">Aucun minimum</option><option value="5">5 €</option><option value="10">10 €</option><option value="20">20 €</option><option value="50">50 €</option><option value="100">100 €</option><option value="200">200 €</option></select></label>
@@ -1303,17 +1303,13 @@ async function loadResearch() {
   catch (e) { researchErr = e.message === "absent" ? "La première recherche sera prête après le relevé automatique de demain matin." : "Recherche indisponible pour le moment."; }
   renderResearch();
 }
-// Cartes de 2018 et après seulement. Prix français (near mint / mint, sans cartes gradées) relevés sur Cardmarket : data/prix_fr.json.
+// Cartes de 2018 et après seulement. Prix loose : français Near Mint relevé sur Pokoya (c.fr), sinon Cardmarket toutes langues.
 const ANNEE_MIN = 2018;
-const frKey = c => norm(c.set).replace(/ /g, "") + "|" + String(c.numero).replace(/^0+/, "").toLowerCase();
 async function mergeFrPrices() {
   research.cartes = research.cartes.filter(c => Number(c.annee) >= ANNEE_MIN);
-  let fr = {};
-  try { const r = await fetch("data/prix_fr.json", { cache: "no-store" }); if (r.ok) fr = (await r.json()).cartes || {}; } catch (e) {}
-  let n = 0;
-  research.cartes.forEach(c => { const f = fr[frKey(c)]; if (f && f.prix > 0) { c.loose_all = c.loose; c.loose = f.prix; c.fr = f; n++; } });
-  research.nbFr = n;
+  research.nbFr = research.cartes.filter(c => c.fr).length;
 }
+const looseSrc = c => c.fr ? "FR near mint · Pokoya" : "toutes langues (prix Cardmarket)";
 const rNum = (k, d) => { const v = parseFloat(String(pref.get(k, "")).replace(",", ".")); return isNaN(v) || v < 0 ? d : v; };
 // Hype du Pokémon (0-100) : estimation de popularité auprès des collectionneurs (cartes les plus gradées : Pikachu, Dracaufeu, Gengar, Mewtwo, Mew, Noctali, Évoli...).
 const HYPE = [
@@ -1342,7 +1338,7 @@ function liquidity(c, s) {
   return { score, days, hype, label: lvl[0], cls: lvl[1] };
 }
 // ---------- page « À surveiller » : cartes dont le prix monte vite ----------
-let watchHist = {};   // historique jour par jour (data/watch_history.json) : { date: { cm_id: tendance } }
+let watchHist = {};   // historique jour par jour (data/watch_history.json) : { date: { clé de la carte (c.wkey): prix } }
 [["wUp", "w_up", "20"], ["wMin", "w_min", "10"], ["wMax", "w_max", ""], ["wSort", "w_sort", "pct"]].forEach(([id, k, d]) => {
   const v = pref.get(k, d), sel = $(id);
   if (v !== "" && ![...sel.options].some(o => o.value === v)) sel.add(new Option(v + (id === "wUp" ? " %" : " €"), v));
@@ -1368,12 +1364,12 @@ function cccLine(c) {
 function watchDetail(c) {
   const box = el("div"); box.style.cssText = "display:flex; flex-wrap:wrap; gap:8px 28px; padding:4px 2px 10px";
   const cm = c.cm, ref = cm.avg30;
-  box.append(miniTable("Évolution du prix (Cardmarket, toutes langues)", ["", "Prix", "vs moy. 30 j"], [
+  box.append(miniTable(c.fr ? "Évolution du prix (français Near Mint, Pokoya)" : "Évolution du prix (Cardmarket, toutes langues)", ["", "Prix", "vs moy. 30 j"], [
     ["Moyenne 30 jours", fmt(cm.avg30), ""], ["Moyenne 7 jours", fmt(cm.avg7), variation(cm.avg7, ref)],
     ["Moyenne 1 jour", fmt(cm.avg1), variation(cm.avg1, ref)], ["Tendance", fmt(cm.trend), variation(cm.trend, ref)]].filter(r => r[1] !== "—")));
-  const days = Object.keys(watchHist).sort().map(d => [d, (watchHist[d] || {})[String(c.cm_id)]]).filter(p => p[1] > 0);
+  const days = Object.keys(watchHist).sort().map(d => [d, (watchHist[d] || {})[c.wkey || String(c.cm_id)]]).filter(p => p[1] > 0);
   box.append(days.length > 1
-    ? miniTable("Jour par jour (tendance)", ["Jour", "Prix", "Variation"], dailyRows(days))
+    ? miniTable("Jour par jour", ["Jour", "Prix", "Variation"], dailyRows(days))
     : el("p", "meta", "L'historique jour par jour se remplit à partir de demain."));
   box.append(miniTable("Prix en CCC (ventes Graded Card Center)", ["Note", "Prix", "Ventes", "Dernière"], ["10", "9.5", "9"].map(n => {
     const s = c.ccc && c.ccc[n];
@@ -1408,7 +1404,7 @@ function renderWatch() {
   const box = $("wList"), colBox = $("wCol");
   if (!research) { $("wInfo").textContent = researchErr; box.replaceChildren(); colBox.replaceChildren(); return; }
   const range = (min ? " ≥ " + min + " €" : "") + (max < Infinity ? " ≤ " + max + " €" : "");
-  // 1. cartes du classement : moyenne 7 jours / moyenne 30 jours (Cardmarket, toutes langues)
+  // 1. cartes du classement : moyenne 7 jours / moyenne 30 jours (prix FR Pokoya, sinon Cardmarket toutes langues)
   const withAvg = research.cartes.filter(c => c.cm && c.cm.avg7 > 0 && c.cm.avg30 > 0);
   const rows = withAvg.map(c => ({ c, pct: (c.cm.avg7 / c.cm.avg30 - 1) * 100, gain: c.cm.avg7 - c.cm.avg30 }))
     .filter(r => r.pct >= up && r.c.cm.avg7 >= min && r.c.cm.avg7 <= max)
@@ -1512,7 +1508,7 @@ function drawFiche(c) {
   if (validImg(c)) { const img = el("img", "big"); img.src = c.image; img.alt = ""; img.referrerPolicy = "no-referrer"; box.append(img); }
   const body = el("div", "fbody");
   body.append(el("div", "name", c.nom), el("div", "meta", [c.set, c.numero, c.annee].filter(Boolean).join(" · ")));
-  body.append(el("div", "label", c.fr ? "Prix loose (Cardmarket, français near mint, moyenne de " + c.fr.nb + " annonces)" : "Prix loose (Cardmarket, tendance, toutes langues)"), el("div", "fprice", fmt(c.loose)));
+  body.append(el("div", "label", c.fr ? "Prix loose (Cardmarket, français near mint, relevé sur Pokoya)" : "Prix loose (Cardmarket, tendance, toutes langues)"), el("div", "fprice", fmt(c.loose)));
   if (c.cm_id) {
     const a = el("a", "meta", "Voir sur Cardmarket ↗"); a.href = cmLink(c); a.target = "_blank"; a.rel = "noopener noreferrer";
     a.style.cssText = "display:inline-block; margin-top:2px; color:var(--muted); text-decoration:underline"; body.append(a);
@@ -1605,7 +1601,7 @@ if (page === "watch") { renderWatch(); return; }
     info.append(name, el("div", "meta", [c.set, c.numero, c.annee].filter(Boolean).join(" · ")));
     if (others) info.append(el("div", "meta other", "Autres notes : " + others));
     const loose = moneyTd(fmt(c.loose));
-    loose.append(el("div", "meta", c.fr ? "FR near mint · moy. " + c.fr.nb + " annonce" + (c.fr.nb > 1 ? "s" : "") + " · " + fmtDay(c.fr.date) : "toutes langues (prix Cardmarket)"));
+    loose.append(el("div", "meta", looseSrc(c)));
     if (c.cm_id) {
       const a = el("a", "meta", "Cardmarket ↗"); a.href = cmLink(c); a.target = "_blank"; a.rel = "noopener noreferrer";
       a.style.cssText = "display:block; color:var(--muted); text-decoration:underline"; loose.append(a);
