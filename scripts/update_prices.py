@@ -22,6 +22,10 @@ dérivée du mot de passe ne change donc pas d'une mise à jour à l'autre) et, 
 clé chiffrée avec son propre mot de passe. Il est entièrement calculé par le navigateur du propriétaire
 et envoyé par un message chiffré {"action": "set_keyring", ...} ; ce script ne fait que le vérifier.
 
+Connexion : data/auth.json (public) contient la clé interne du coffre enveloppée une fois par le mot de passe
+de connexion et une fois par un code de récupération aléatoire. Il est calculé par le navigateur du
+propriétaire et envoyé par {"action": "set_auth", ...} ; ce script ne fait que le vérifier.
+
 Première exécution : si le coffre n'existe pas, il est créé à partir des anciens
 fichiers en clair (data/watchlist.json, data/history.json).
 """
@@ -46,6 +50,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 VAULT = DATA / "vault.json"
 KEYRING = DATA / "keyring.json"
+AUTH = DATA / "auth.json"
 RESEARCH = DATA / "research.json"
 MAX_INVITES = 20
 API = "https://api.tcgdex.net/v2"
@@ -249,6 +254,23 @@ def clean_keyring(raw):
     return {"v": 1, "salt": raw["salt"], "iter": ITERATIONS, "accounts": propres}
 
 
+def clean_auth(raw):
+    """Vérifie strictement data/auth.json envoyé par le site : la clé interne enveloppée par le mot de passe
+    de connexion (« login ») et par le code de récupération (« recovery »). Retourne None si invalide."""
+    if not isinstance(raw, dict):
+        return None
+    propre = {"v": 1}
+    for k in ("login", "recovery"):
+        b = raw.get(k)
+        if not isinstance(b, dict) or set(b) != {"salt", "iter", "wrap"}:
+            return None
+        if not _b64(b["salt"], 16, 16) or not isinstance(b["iter"], int) or isinstance(b["iter"], bool) \
+                or not (100_000 <= b["iter"] <= 2_000_000) or not _boite(b["wrap"]):
+            return None
+        propre[k] = {"salt": b["salt"], "iter": b["iter"], "wrap": b["wrap"]}
+    return propre
+
+
 def set_keyring(kr, password):
     """Enregistre le trousseau. Si le sel change (invité supprimé), la recherche est rechiffrée avec la nouvelle clé."""
     ancien = keyring_salt()
@@ -328,6 +350,15 @@ def apply_payload(vault, password):
         set_keyring(kr, password)
         vault["keyring_stamp"] = str(msg.get("stamp") or "")[:40]
         print(f"Comptes invités enregistrés : {len(kr['accounts'])} compte(s).")
+    elif action == "set_auth":
+        auth = clean_auth(msg.get("auth"))
+        if not auth:
+            print("Connexion : enveloppes refusées (format invalide).")
+            return
+        DATA.mkdir(exist_ok=True)
+        AUTH.write_text(json.dumps(auth, indent=1), encoding="utf-8")
+        vault["auth_stamp"] = str(msg.get("stamp") or "")[:40]
+        print("Mot de passe de connexion et code de récupération enregistrés.")
     elif action == "refresh_ccc":
         global FORCE_CCC
         FORCE_CCC = True
