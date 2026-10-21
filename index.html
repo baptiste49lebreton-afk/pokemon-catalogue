@@ -401,7 +401,7 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
       <h2>Cartes à surveiller</h2>
       <p class="help" style="margin-top:0">Les cartes dont le prix monte vite : moyenne Cardmarket des 7 derniers jours comparée à celle des 30 derniers jours. Prix Cardmarket toutes langues (pas le prix français), relevés chaque matin.</p>
       <div class="grid" style="margin-top:12px">
-        <label>Hausse minimum <select id="wUp"><option value="20">+20 % et plus</option><option value="30">+30 % et plus</option><option value="50">+50 % et plus</option><option value="100">+100 % et plus</option></select></label>
+        <label>Hausse minimum <select id="wUp"><option value="5">+5 % et plus</option><option value="10">+10 % et plus</option><option value="15">+15 % et plus</option><option value="20">+20 % et plus</option><option value="30">+30 % et plus</option><option value="50">+50 % et plus</option><option value="100">+100 % et plus</option><option value="200">+200 % et plus</option></select></label>
         <label>Prix minimum <select id="wMin"><option value="5">5 €</option><option value="10">10 €</option><option value="20">20 €</option><option value="50">50 €</option><option value="100">100 €</option></select></label>
       </div>
       <div class="setrow" style="margin-top:12px; align-items:center; gap:10px; flex-wrap:wrap">
@@ -1297,7 +1297,7 @@ function liquidity(c, s) {
   return { score, days, hype, label: lvl[0], cls: lvl[1] };
 }
 // ---------- page « À surveiller » : cartes dont le prix monte vite ----------
-[["wUp", "w_up", "30"], ["wMin", "w_min", "10"]].forEach(([id, k, d]) => { $(id).value = pref.get(k, d); if ($(id).value === "") $(id).value = d; });
+[["wUp", "w_up", "20"], ["wMin", "w_min", "10"]].forEach(([id, k, d]) => { $(id).value = pref.get(k, d); if ($(id).value === "") $(id).value = d; });
 $("wApply").addEventListener("click", () => { pref.set("w_up", $("wUp").value); pref.set("w_min", $("wMin").value); renderWatch(); });
 function watchTable(cols, rows) {
   const table = el("table"), thead = el("thead"), head = el("tr"), tbody = el("tbody");
@@ -1318,7 +1318,7 @@ function watchCell(c, rank, extra) {
   return [imgCell, info];
 }
 function renderWatch() {
-  const up = Number(pref.get("w_up", "30")) || 30, min = Number(pref.get("w_min", "10")) || 10;
+  const up = Number(pref.get("w_up", "20")) || 20, min = Number(pref.get("w_min", "10")) || 10;
   const box = $("wList"), colBox = $("wCol");
   if (!research) { $("wInfo").textContent = researchErr; box.replaceChildren(); colBox.replaceChildren(); return; }
   // 1. cartes du classement : moyenne 7 jours / moyenne 30 jours (Cardmarket, toutes langues)
