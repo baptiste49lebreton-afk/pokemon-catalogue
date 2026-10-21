@@ -16,6 +16,7 @@ import html as htmllib
 import json
 import re
 import time
+import unicodedata
 import urllib.request
 
 BASE = "https://pokoya.app"
@@ -26,6 +27,7 @@ _LIEN = re.compile(r'href="/extension/([^"/?#]+)"[\s\S]{0,800}?alt="([^"]*)"')
 _EXT = re.compile(r'"series_code":"([^"]+)","set_name":"((?:[^"\\]|\\.)*)"')
 
 _slugs = None   # {code d'extension: nom de la page}
+_noms = {}      # {nom d'extension simplifié: code d'extension}
 _cartes = {}    # {code d'extension: {numéro: carte Pokoya}}
 _echecs = {}    # {page: erreur} : pages qui n'ont pas répondu pendant ce relevé
 
@@ -60,6 +62,20 @@ def _liste(donnees, cle, quoi):
     return json.JSONDecoder().raw_decode(donnees, i + len(cle) + 3)[0]
 
 
+def _simple(s):
+    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+def code_par_nom(*noms):
+    """Code d'extension d'après son nom français sur Pokoya (repli quand TCGdex ne répond pas), ou None."""
+    extensions()
+    for nom in noms:
+        if _simple(nom) in _noms:
+            return _noms[_simple(nom)]
+    return None
+
+
 def _numero(n):
     n = str(n).strip().lstrip("0").lower()
     return n or "0"
@@ -73,9 +89,11 @@ def extensions():
         par_nom = {htmllib.unescape(nom): slug for slug, nom in _LIEN.findall(page)}
         slugs = {}
         for code, nom in _EXT.findall(_donnees(page)):
-            slug = par_nom.get(json.loads('"' + nom + '"'))
+            nom = json.loads('"' + nom + '"')
+            slug = par_nom.get(nom)
             if slug:
                 slugs[code] = slug
+                _noms.setdefault(_simple(nom), code)
         if not slugs:
             _echecs["/extensions"] = ValueError("liste des extensions Pokoya illisible")
             raise _echecs["/extensions"]

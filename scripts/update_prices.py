@@ -34,6 +34,7 @@ import hashlib
 import json
 import os
 import sys
+import time
 import urllib.parse
 import urllib.request
 from datetime import date
@@ -95,7 +96,17 @@ class ApiError(Exception):
     pass
 
 
-def api_get(path, params=None, lang="en"):
+def api_get(path, params=None, lang="en", essais=2):
+    try:
+        return _api_get(path, params, lang)
+    except ApiError as exc:
+        if essais <= 1 or "404" in str(exc):
+            raise
+        time.sleep(5)  # TCGdex ne répond pas toujours du premier coup
+        return api_get(path, params, lang, essais - 1)
+
+
+def _api_get(path, params=None, lang="en"):
     url = f"{API}/{lang}/{path}"
     if params:
         url += "?" + urllib.parse.urlencode(params)
@@ -443,6 +454,7 @@ def main():
         image = f"{card['image']}/low.webp" if card and card.get("image") else None
         set_code = ((card or {}).get("set") or {}).get("id") or old.get("set_code")
         try:
+            set_code = set_code or pokoya_prices.code_par_nom(entry.get("set_affiche"), entry.get("set_api"))
             price_pk = pokoya_prices.prix_fr(set_code, entry["numero"])
         except Exception as exc:  # Pokoya injoignable ou page changée : on garde le dernier prix FR connu
             price_pk = old.get("prix_pokoya")
