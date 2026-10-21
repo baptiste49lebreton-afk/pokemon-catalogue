@@ -375,6 +375,7 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
 <label>Rendement min <select id="rRoi"><option value="">Tous</option><option value="0">Rentable (0 % et +)</option><option value="25">25 % et +</option><option value="50">50 % et +</option><option value="100">100 % et +</option><option value="200">200 % et +</option><option value="500">500 % et +</option></select></label>
 <label>Gain net min <select id="rGain"><option value="">Tous</option><option value="0">Positif (0 € et +)</option><option value="10">10 € et +</option><option value="25">25 € et +</option><option value="50">50 € et +</option><option value="100">100 € et +</option><option value="250">250 € et +</option><option value="500">500 € et +</option></select></label>
         <label>Ventes CCC min <select id="rN"><option value="1">1 vente</option><option value="2">2 ventes</option><option value="3">3 ventes</option></select></label>
+        <label>Prix français <select id="rFr"><option value="">Tous (français si relevé, sinon toutes langues)</option><option value="1">Seulement ceux relevés en français</option></select></label>
         <label>Nom ou extension <input id="rQ" maxlength="60" placeholder="ex. Dracaufeu"></label>
       </div>
       <div class="setrow" style="margin-top:12px; align-items:center; gap:10px; flex-wrap:wrap">
@@ -1235,9 +1236,20 @@ function setPage(p) {
 }
 async function loadResearch() {
   $("rInfo").textContent = "Chargement de la recherche…";
-  try { research = await loadVault("research.json"); researchErr = ""; }
+  try { research = await loadVault("research.json"); researchErr = ""; await mergeFrPrices(); }
   catch (e) { researchErr = e.message === "absent" ? "La première recherche sera prête après le relevé automatique de demain matin." : "Recherche indisponible pour le moment."; }
   renderResearch();
+}
+// Cartes de 2018 et après seulement. Prix français (near mint / mint, sans cartes gradées) relevés sur Cardmarket : data/prix_fr.json.
+const ANNEE_MIN = 2018;
+const frKey = c => norm(c.set).replace(/ /g, "") + "|" + String(c.numero).replace(/^0+/, "").toLowerCase();
+async function mergeFrPrices() {
+  research.cartes = research.cartes.filter(c => Number(c.annee) >= ANNEE_MIN);
+  let fr = {};
+  try { const r = await fetch("data/prix_fr.json", { cache: "no-store" }); if (r.ok) fr = (await r.json()).cartes || {}; } catch (e) {}
+  let n = 0;
+  research.cartes.forEach(c => { const f = fr[frKey(c)]; if (f && f.prix > 0) { c.loose_all = c.loose; c.loose = f.prix; c.fr = f; n++; } });
+  research.nbFr = n;
 }
 const rNum = (k, d) => { const v = parseFloat(String(pref.get(k, "")).replace(",", ".")); return isNaN(v) || v < 0 ? d : v; };
 // Hype du Pokémon (0-100) : estimation de popularité auprès des collectionneurs (cartes les plus gradées : Pikachu, Dracaufeu, Gengar, Mewtwo, Mew, Noctali, Évoli...).
@@ -1310,7 +1322,7 @@ function drawFiche(c) {
   if (validImg(c)) { const img = el("img", "big"); img.src = c.image; img.alt = ""; img.referrerPolicy = "no-referrer"; box.append(img); }
   const body = el("div", "fbody");
   body.append(el("div", "name", c.nom), el("div", "meta", [c.set, c.numero, c.annee].filter(Boolean).join(" · ")));
-  body.append(el("div", "label", "Prix loose (Cardmarket, tendance)"), el("div", "fprice", fmt(c.loose)));
+  body.append(el("div", "label", c.fr ? "Prix loose (Cardmarket, français near mint, moyenne de " + c.fr.nb + " annonces)" : "Prix loose (Cardmarket, tendance, toutes langues)"), el("div", "fprice", fmt(c.loose)));
   if (c.cm_id) {
     const a = el("a", "meta", "Voir sur Cardmarket ↗"); a.href = cmLink(c); a.target = "_blank"; a.rel = "noopener noreferrer";
     a.style.cssText = "display:inline-block; margin-top:2px; color:var(--muted); text-decoration:underline"; body.append(a);
@@ -1363,6 +1375,7 @@ function researchRows() {
   const q = norm(pref.get("r_q", ""));
   return research.cartes.map(c => {
     const s = (c.ccc || {})[note];
+    if (pref.get("r_fr", "") === "1" && !c.fr) return null;
     if (!s || c.loose == null || c.loose < min || c.loose > max || s.n < minN) return null;
     if (q && !norm(c.nom + " " + c.titre_gcc + " " + c.set).includes(q)) return null;
     const fee = cccFee(s.prix).fee + extra, ins = 0.02 * s.prix;
@@ -1379,7 +1392,8 @@ if (page === "fiche") { renderFichePage(); return; }
   renderCardSearch();
   if (!research) { $("rInfo").textContent = researchErr; box.replaceChildren(); return; }
   const rows = researchRows(), shown = rows.slice(0, 400);
-  $("rInfo").textContent = "Relevé du " + fmtDay(research.updated) + " · " + research.cartes.length + " cartes analysées · "
+  $("rInfo").textContent = "Relevé du " + fmtDay(research.updated) + " · " + research.cartes.length + " cartes analysées (2018 et après) · "
+    + (research.nbFr || 0) + " avec prix français relevé · "
     + rows.length + " correspondent à tes filtres" + (rows.length > shown.length ? " (les 400 meilleures affichées)" : "") + ".";
   if (!rows.length) { box.replaceChildren(el("p", "help", "Aucune carte avec ces filtres : assouplis un filtre (prix, rendement, gain ou nombre de ventes).")); return; }
   const cols = [["", ""], ["Carte", ""], ["Loose", "r"], ["CCC " + note, "r"], ["Frais", "r"], ["Gain net", "r"], ["Rendement", "r"], ["Liquidité", "r"]];
@@ -1400,6 +1414,7 @@ if (page === "fiche") { renderFichePage(); return; }
     info.append(name, el("div", "meta", [c.set, c.numero, c.annee].filter(Boolean).join(" · ")));
     if (others) info.append(el("div", "meta other", "Autres notes : " + others));
     const loose = moneyTd(fmt(c.loose));
+    loose.append(el("div", "meta", c.fr ? "FR near mint · moy. " + c.fr.nb + " annonce" + (c.fr.nb > 1 ? "s" : "") + " · " + fmtDay(c.fr.date) : "toutes langues (prix Cardmarket)"));
     if (c.cm_id) {
       const a = el("a", "meta", "Cardmarket ↗"); a.href = cmLink(c); a.target = "_blank"; a.rel = "noopener noreferrer";
       a.style.cssText = "display:block; color:var(--muted); text-decoration:underline"; loose.append(a);
@@ -1644,7 +1659,7 @@ $("tabs").addEventListener("click", ev => { const b = ev.target.closest("button"
   history.replaceState(null, "", b.dataset.p === "rech" ? "#recherche" : location.pathname + location.search); setPage(b.dataset.p); });
 window.addEventListener("hashchange", () => { if (state.password) setPage(location.hash === "#recherche" ? "rech" : "col"); });
 // Les filtres ne s'appliquent qu'au clic sur « Actualiser » (ou Entrée) : on lit alors les valeurs affichées.
-const R_FILTERS = [["rQ", "r_q", ""], ["rShip", "r_ship", "3"], ["rComm", "r_comm", "0"], ["rMin", "r_min", "5"], ["rMax", "r_max", ""], ["rRoi", "r_roi", ""], ["rGain", "r_gain", ""], ["rN", "r_n", "1"], ["rSpeed", "r_speed", "regular"]];
+const R_FILTERS = [["rQ", "r_q", ""], ["rShip", "r_ship", "3"], ["rComm", "r_comm", "0"], ["rMin", "r_min", "5"], ["rMax", "r_max", ""], ["rRoi", "r_roi", ""], ["rGain", "r_gain", ""], ["rN", "r_n", "1"], ["rSpeed", "r_speed", "regular"], ["rFr", "r_fr", ""]];
 function rMarkPending() {
   const changed = R_FILTERS.some(([id, k, d]) => String($(id).value) !== String(pref.get(k, d)));
   $("rApply").classList.toggle("pending", changed);
@@ -1657,7 +1672,7 @@ function rApply() {
 [["rQ", "r_q", ""], ["rShip", "r_ship", "3"], ["rComm", "r_comm", "0"]].forEach(([id, k, d]) => {
   $(id).value = pref.get(k, d); $(id).addEventListener("input", rMarkPending);
   $(id).addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); rApply(); } }); });
-[["rMin", "r_min", "5"], ["rMax", "r_max", ""], ["rRoi", "r_roi", ""], ["rGain", "r_gain", ""], ["rN", "r_n", "1"], ["rSpeed", "r_speed", "regular"]].forEach(([id, k, d]) => {
+[["rMin", "r_min", "5"], ["rMax", "r_max", ""], ["rRoi", "r_roi", ""], ["rGain", "r_gain", ""], ["rN", "r_n", "1"], ["rSpeed", "r_speed", "regular"], ["rFr", "r_fr", ""]].forEach(([id, k, d]) => {
 const s = $(id), v0 = pref.get(k, d);
 if (id === "rMin" && v0 === "") pref.set(k, "0");
 else if (["rMin", "rMax", "rRoi", "rGain"].includes(id) && v0 !== "" && ![...s.options].some(o => o.value === v0)) s.add(new Option(String(v0).replace(".", ",") + (id === "rRoi" ? " %" : " €"), v0));
