@@ -1359,9 +1359,19 @@ function cccLine(c) {
   const parts = ["10", "9.5", "9"].filter(n => c.ccc && c.ccc[n]).map(n => "CCC " + n + " ≈ " + fmt(c.ccc[n].prix));
   return parts.length ? parts.join(" · ") : "Pas de vente CCC relevée";
 }
+function buyBar(c) {   // « Acheter sur… » : même recherche et mêmes filtres que sur la fiche d'une carte
+  const bar = el("div", "setrow"), sel = el("select");
+  bar.style.cssText = "flex:1 1 100%; align-items:center; gap:10px; flex-wrap:wrap";
+  sel.setAttribute("aria-label", "Chercher cette carte sur un site d'achat");
+  [["", "Acheter sur…"], ["vinted", "Vinted"], ["ebay", "eBay"], ["cardmarket", "Cardmarket"]].forEach(o => sel.append(new Option(o[1], o[0])));
+  sel.addEventListener("change", () => { const u = shopUrl(sel.value, c); sel.value = ""; if (u) window.open(u, "_blank", "noopener"); });
+  bar.append(el("span", "label", "Chercher cette carte"), sel);
+  return bar;
+}
 function watchDetail(c) {
   const box = el("div"); box.style.cssText = "display:flex; flex-wrap:wrap; gap:8px 28px; padding:4px 2px 10px";
   const ref = c.avg30, r = researchByKey.get(c.k) || {};
+  box.append(buyBar(researchByKey.get(c.k) || c));
   box.append(miniTable("Évolution du prix (français Near Mint, Pokoya)", ["", "Prix", "vs moy. 30 j"], [
     ["Moyenne 30 jours", fmt(c.avg30), ""], ["Moyenne 7 jours", fmt(c.avg7), variation(c.avg7, ref)],
     ["Moyenne 1 jour", fmt(c.avg1), variation(c.avg1, ref)]].filter(x => x[1] !== "—")));
@@ -1456,7 +1466,7 @@ function renderWatch() {
       const pct = el("td", "r big up"); pct.append(el("span", "pill up", signedPct(r.pct))); pct.dataset.label = "Hausse";
       tr.append(imgCell, info, before, now, pct);
       tr.classList.add("clk"); tr.tabIndex = 0; tr.title = "Voir l'évolution jour par jour";
-      const open = () => toggleDetail(tr, () => { const b = el("div"); b.style.cssText = "padding:4px 2px 10px"; b.append(miniTable("Jour par jour (prix de la carte)", ["Jour", "Prix", "Variation"], dailyRows(r.days))); return b; }, 5);
+      const open = () => toggleDetail(tr, () => { const b = el("div"); b.style.cssText = "padding:4px 2px 10px"; b.append(buyBar(r.c), miniTable("Jour par jour (prix de la carte)", ["Jour", "Prix", "Variation"], dailyRows(r.days))); return b; }, 5);
       tr.addEventListener("click", ev => { if (!ev.target.closest("a, button")) open(); });
       tr.addEventListener("keydown", ev => { if (ev.key === "Enter" && ev.target === tr) open(); });
       return tr;
