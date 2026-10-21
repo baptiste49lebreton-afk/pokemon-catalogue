@@ -3,7 +3,7 @@ Prix français des cartes, relevés sur Pokoya (https://pokoya.app).
 
 C'est la seule source de prix des cartes pour tout le site (collection, recherche, cartes à surveiller) :
 la cote Cardmarket de la version française en Near Mint (champ prix_nm_fr), relevée chaque nuit par Pokoya.
-Sans prix français sur Pokoya, les scripts se replient sur la tendance Cardmarket toutes langues (TCGdex).
+Aucun prix toutes langues : sans prix français sur Pokoya (ou saisi à la main), une carte n'a pas de prix.
 
 - Pages publiques autorisées par robots.txt : /extensions fait le lien entre le code d'extension
   (le même que TCGdex, ex. sv03.5) et la page de l'extension, et chaque page /extension/<nom>

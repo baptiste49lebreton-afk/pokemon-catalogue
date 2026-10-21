@@ -4,14 +4,12 @@ Met à jour le coffre chiffré data/vault.json (cartes, produits scellés, prix 
 
 - Les données ne sont JAMAIS écrites en clair dans le dépôt : tout est chiffré
   (AES-256-GCM, clé dérivée du mot de passe par PBKDF2) avec le secret GitHub SITE_PASSWORD.
-- Source des prix des cartes : API publique TCGdex (https://tcgdex.dev), gratuite et sans clé.
-  Prix Cardmarket en euros uniquement (pas de prix en dollars).
+- Cartes : identification (image, extension, lien Cardmarket) via l'API publique TCGdex (https://tcgdex.dev).
+- Prix des cartes : uniquement des prix français (aucun prix toutes langues).
 - Produits scellés : prix de marché saisi à la main (champ prix_marche_manuel).
-- Prix « français » : la cote Cardmarket de la version française en Near Mint, relevée sur Pokoya
-  (scripts/pokoya_prices.py), sert de prix de base. Elle peut être remplacée par un prix saisi à la main
-  (champ prix_fr). Si Pokoya n'a pas de prix FR pour la carte : prix relevé sur CardTrader depuis le site
-  (champ fr_auto, valable 14 jours), sinon prix Cardmarket toutes langues.
-  Priorité : saisi à la main > Pokoya > CardTrader > Cardmarket.
+  La cote Cardmarket de la version française en Near Mint, relevée sur Pokoya (scripts/pokoya_prices.py),
+  sert de prix. Un prix saisi à la main (champ prix_fr) passe toujours avant. Sans prix FR sur Pokoya
+  ni prix saisi, la carte n'a pas de prix. Ce sont les deux seules sources de prix des cartes.
 - Les prix CCC (10, 9.5, 9) sont relevés automatiquement sur les ventes réussies de Graded Card Center
   (scripts/gcc_prices.py), en euros, sans estimation. Une valeur saisie à la main passe toujours avant.
 
@@ -59,7 +57,6 @@ MAX_INVITES = 20
 API = "https://api.tcgdex.net/v2"
 PRIX_BOOSTER = 5.99
 ITERATIONS = 600_000
-FR_AUTO_JOURS = 14
 FORCE_CCC = False  # vrai quand le site demande « actualiser les prix CCC » : GCC remplace les prix CCC saisis à la main
 
 
@@ -149,15 +146,6 @@ def find_card(entry):
         except ApiError as exc:
             last_error = exc
     raise last_error
-
-
-def best_price(card):
-    """Prix Cardmarket en euros uniquement."""
-    cm = ((card or {}).get("pricing") or {}).get("cardmarket") or {}
-    for key in ("trend", "trend-holo", "avg", "avg-holo"):
-        if cm.get(key):
-            return cm[key]
-    return None
 
 
 # ---------- éléments du suivi ----------
@@ -380,17 +368,6 @@ def apply_payload(vault, password):
                 break
         else:
             print("Prix français : élément introuvable.")
-    elif action == "set_fr_auto":
-        prices = msg.get("prices") if isinstance(msg.get("prices"), dict) else {}
-        n_ok = 0
-        for e in vault["watchlist"]:
-            p = prices.get(ensure_uid(e)["uid"])
-            prix = _num(p.get("prix")) if isinstance(p, dict) else None
-            if prix is not None and prix > 0:
-                e["fr_auto"] = {"prix": prix, "n": int(_num(p.get("n"), 0) or 0),
-                                "min": _num(p.get("min")), "date": date.today().isoformat()}
-                n_ok += 1
-        print(f"Prix CardTrader (relevés depuis le site) enregistrés pour {n_ok} carte(s).")
     else:
         print("Message ignoré : action inconnue.")
 
@@ -462,7 +439,6 @@ def main():
             print(f"  erreur pour {entry['nom']} : {exc}")
         old = previous.get(entry["uid"]) or previous.get(entry["nom"]) or {}
         cid = card["id"] if card else (old.get("id") or entry["nom"])
-        price_cm = best_price(card) if card else None
         cm_id = (((card or {}).get("pricing") or {}).get("cardmarket") or {}).get("idProduct") or old.get("cm_id")
         image = f"{card['image']}/low.webp" if card and card.get("image") else None
         set_code = ((card or {}).get("set") or {}).get("id") or old.get("set_code")
@@ -471,26 +447,16 @@ def main():
         except Exception as exc:  # Pokoya injoignable ou page changée : on garde le dernier prix FR connu
             price_pk = old.get("prix_pokoya")
             print(f"  Pokoya indisponible pour {entry['nom']} : {exc}")
-        manual, auto = entry.get("prix_fr"), entry.get("fr_auto") or {}
-        try:
-            auto_ok = auto.get("prix") and (date.today() - date.fromisoformat(auto["date"])).days <= FR_AUTO_JOURS
-        except (KeyError, ValueError, TypeError, AttributeError):
-            auto_ok = False
-        fr_n = fr_min = None
+        manual = entry.get("prix_fr")
+        entry.pop("fr_auto", None)  # ancien prix CardTrader : plus utilisé
         if manual is not None:
             price, source = manual, "manuel"
         elif price_pk is not None:
             price, source = price_pk, "pokoya"
-        elif auto_ok:
-            price, source, fr_n, fr_min = auto["prix"], "fr", auto.get("n"), auto.get("min")
-        else:
-            price, source = price_cm, "cm"
-        override = source != "cm"
-        if failed:  # l'API ne répond pas : on garde les dernières valeurs connues
+        else:  # pas de prix français : pas de prix (jamais de prix toutes langues)
+            price, source = None, "aucun"
+        if failed:  # l'API ne répond pas : on garde la dernière image connue
             image = old.get("image")
-            price_cm = old.get("prix_cm", old.get("prix_marche"))
-            if not override:
-                price, source = old.get("prix_marche"), old.get("source", "cm")
         ccc_manual = entry.get("ccc") or {}
         ccc_gcc = {}
         try:
@@ -523,28 +489,25 @@ def main():
             "prix_paye": entry.get("prix_paye", PRIX_BOOSTER),
             "quantite": entry.get("quantite", 1),
             "prix_marche": price,
-            "prix_cm": price_cm,
             "prix_pokoya": price_pk,
             "set_code": set_code,
             "cm_id": cm_id,
             "source": source,
             "prix_fr": manual,
-            "fr_n": fr_n,
-            "fr_min": fr_min,
             "ccc10": ccc_vals["10"],
             "ccc95": ccc_vals["9.5"],
             "ccc9": ccc_vals["9"],
             "ccc_auto": ccc_auto,
             "ccc_gcc": ccc_gcc,
         })
-        if source == "pokoya" and entry["uid"] not in vault.setdefault("pokoya_hist", []):
-            # passage au prix FR : les jours relevés par Pokoya remplacent l'ancien prix toutes langues
+        if source == "pokoya" and entry["uid"] not in vault.setdefault("fr_hist", []):
+            # passage au prix FR : l'historique de la carte (toutes langues) est remplacé par celui de Pokoya
             try:
-                history.setdefault(cid, {}).update(pokoya_prices.historique(set_code, entry["numero"]))
-                vault["pokoya_hist"].append(entry["uid"])
+                history[cid] = pokoya_prices.historique(set_code, entry["numero"])
+                vault["fr_hist"].append(entry["uid"])
             except Exception as exc:
                 print(f"  historique Pokoya indisponible pour {entry['nom']} : {exc}")
-        if price is not None and (not failed or override):
+        if price is not None:
             history.setdefault(cid, {})[today] = price
 
     if api_entries and errors == api_entries:

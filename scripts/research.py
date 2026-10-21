@@ -5,12 +5,12 @@ Recherche des cartes les plus rentables à acheter en loose puis à faire grader
 1. Découverte : on parcourt les ventes réussies CCC de Graded Card Center (GCC) par note et par tranche
    de prix (la page publique ne montre que les 30 ventes les plus récentes d'une recherche, d'où le découpage).
 2. Prix loose : pour chaque carte française trouvée, prix FR Near Mint relevé sur Pokoya (même source que
-   la collection, scripts/pokoya_prices.py). Sans prix FR : tendance Cardmarket toutes langues via TCGdex.
+   la collection, scripts/pokoya_prices.py). Sans prix FR, la carte est écartée (jamais de prix toutes langues).
 3. Affinage : pour les cartes les plus prometteuses, on relit toutes leurs ventes CCC sur GCC
    (même méthode que scripts/gcc_prices.py : médiane des 3 dernières ventes de chaque note).
 
-Cartes à surveiller : data/watch_history.json garde le prix du jour de chaque carte (prix FR Pokoya, sinon
-tendance toutes langues) ; les moyennes 1, 7 et 30 jours des cartes FR sont calculées sur cet historique.
+Cartes à surveiller : data/watch_history.json garde le prix FR du jour de chaque carte ; les moyennes
+1, 7 et 30 jours sont calculées sur cet historique.
 
 Résultat chiffré avec le mot de passe du site dans data/research.json. Les frais (gradation, envoi,
 assurance) sont appliqués par le site, avec les hypothèses que tu règles toi-même.
@@ -168,30 +168,6 @@ def meme_carte(titre, card):
     return bool(mots) and any(m in nom for m in mots[:2] if len(m) >= 3)
 
 
-def prix_loose(titre, card):
-    cm = (card.get("pricing") or {}).get("cardmarket") or {}
-    if "reverse" in titre.lower():
-        cles = ("trend-holo", "avg30-holo", "avg-holo")
-    else:
-        cles = ("trend", "avg30", "avg", "trend-holo", "avg30-holo")
-    for k in cles:
-        if cm.get(k):
-            return round(float(cm[k]), 2), cm.get("idProduct")
-    return None, cm.get("idProduct")
-
-
-def moyennes(titre, card):
-    """Moyennes Cardmarket (toutes langues) sur 1, 7 et 30 jours + tendance : repli pour les cartes sans prix FR."""
-    cm = (card.get("pricing") or {}).get("cardmarket") or {}
-    suf = "-holo" if "reverse" in titre.lower() else ""
-    out = {}
-    for k in ("avg1", "avg7", "avg30", "trend"):
-        v = cm.get(k + suf) or cm.get(k)
-        if v:
-            out[k] = round(float(v), 2)
-    return out or None
-
-
 def prix_fr(v, sid):
     """Prix FR Near Mint Pokoya (None pour une reverse : Pokoya ne donne que la version normale)."""
     if "reverse" in v["titre"].lower():
@@ -204,25 +180,25 @@ def prix_fr(v, sid):
 
 
 def lire_historique(password):
-    """data/watch_history.json : {"v": 2, "days": {date: {clé: prix}}, "demarre": [clés]}.
-    L'ancien format (tendance toutes langues par cm_id) est abandonné : il mélangeait les langues."""
+    """data/watch_history.json : {"v": 3, "days": {date: {clé: prix FR}}, "demarre": [clés]}.
+    Les anciens formats (avec des prix toutes langues) sont abandonnés."""
     if not password or not HIST.exists():
-        return {"v": 2, "days": {}, "demarre": []}
+        return {"v": 3, "days": {}, "demarre": []}
     try:
         h = update_prices.decrypt(json.loads(HIST.read_text(encoding="utf-8")), password) or {}
     except Exception as exc:
         print(f"  historique illisible, on repart de zéro ({exc})")
         h = {}
-    if h.get("v") != 2:
-        return {"v": 2, "days": {}, "demarre": []}
+    if h.get("v") != 3:
+        return {"v": 3, "days": {}, "demarre": []}
     h.setdefault("days", {})
     h.setdefault("demarre", [])
     return h
 
 
 def maj_historique(h, cartes):
-    """Ajoute le prix du jour de chaque carte, démarre l'historique FR des nouvelles cartes avec celui de Pokoya,
-    puis remplace les moyennes des cartes FR par celles calculées sur cet historique."""
+    """Ajoute le prix FR du jour de chaque carte, démarre l'historique des nouvelles cartes avec celui de Pokoya,
+    puis calcule les moyennes 1, 7 et 30 jours sur cet historique."""
     today = date.today()
     jours = h["days"]
     jours[today.isoformat()] = {c["wkey"]: c["loose"] for c in cartes if c.get("loose")}
@@ -241,8 +217,7 @@ def maj_historique(h, cartes):
         del jours[d]
     h["demarre"] = sorted(demarre)
     for c in cartes:
-        if c.get("fr"):
-            c["cm"] = moyennes_historique(jours, c["wkey"], today)
+        c["cm"] = moyennes_historique(jours, c["wkey"], today)
     print(f"Historique des prix : {len(jours)} jour(s) gardé(s), {lues} fiche(s) Pokoya lue(s) pour le démarrer.")
 
 
@@ -286,17 +261,16 @@ def main():
         card = carte_tcgdex(v)
         if not card or not meme_carte(v["titre"], card):
             continue
-        loose_all, cm_id = prix_loose(v["titre"], card)
         sid = set_id(v["set"])
-        fr = prix_fr(v, sid)
-        loose = fr or loose_all
+        loose = prix_fr(v, sid)
         if not loose or loose < LOOSE_MIN:
-            continue
+            continue  # sans prix FR, la carte est écartée
+        cm_id = ((card.get("pricing") or {}).get("cardmarket") or {}).get("idProduct")
         meilleur = max(x["prix"] for x in vs)
-        candidats.append({"k": k, "v": v, "card": card, "loose": loose, "loose_all": loose_all, "cm_id": cm_id,
-                          "fr": {"prix": fr, "code": sid, "date": date.today().isoformat()} if fr else None,
+        candidats.append({"k": k, "v": v, "card": card, "loose": loose, "cm_id": cm_id,
+                          "fr": {"prix": loose, "code": sid, "date": date.today().isoformat()},
                           "score": (meilleur - loose) / loose, "ventes": vs})
-    print(f"Prix loose trouvés pour {len(candidats)} cartes, dont {sum(1 for c in candidats if c['fr'])} en français (Pokoya).")
+    print(f"Prix FR (Pokoya) trouvés pour {len(candidats)} cartes.")
 
     # 3. affinage : toutes les ventes CCC des cartes les plus prometteuses
     candidats.sort(key=lambda c: c["score"], reverse=True)
@@ -321,10 +295,8 @@ def main():
             "nom": card.get("name") or v["titre"], "titre_gcc": v["titre"],
             "set": v["set"], "numero": v["numero"], "annee": v["annee"],
             "image": f"{card['image']}/low.webp" if card.get("image") else None,
-            "loose": c["loose"], "loose_all": c["loose_all"], "fr": c["fr"], "cm_id": c["cm_id"],
-            "cm": moyennes(v["titre"], card),
-            # clé de l'historique : la carte FR (Pokoya) ou, sans prix FR, le produit Cardmarket
-            "wkey": f"fr:{c['fr']['code']}:{v['numero']}" if c["fr"] else str(c["cm_id"] or "|".join(c["k"])),
+            "loose": c["loose"], "fr": c["fr"], "cm_id": c["cm_id"], "cm": None,  # moyennes FR : maj_historique
+            "wkey": f"fr:{c['fr']['code']}:{v['numero']}",
             "ccc": stats,
         })
     hist = lire_historique(None if plain else password)

@@ -28,7 +28,6 @@ jobs:
         env:
           SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
           PAYLOAD: ${{ inputs.payload }}
-          CARDTRADER_TOKEN: ${{ secrets.CARDTRADER_TOKEN }}
         run: python3 scripts/update_prices.py
       - name: Enregistrer les changements
         run: |
