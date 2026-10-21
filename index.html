@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow, noarchive, noimageindex">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https://assets.tcgdex.net data:; connect-src 'self' https://api.github.com https://api.tcgdex.net; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https://assets.tcgdex.net data:; connect-src 'self' https://api.github.com https://api.tcgdex.net; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
 <title>Collection</title>
 <style>
 :root { --bg:#f4f3ef; --fg:#16181d; --muted:#6c717c; --line:#d9d7d0; --accent:#b88700; --up:#1f7a4d; --down:#b3261e; --field:#fff; --panel:#ebe9e2; color-scheme: light; }
@@ -164,6 +164,9 @@ body.page-rech .colonly { display:none !important; }
 body.guest .ownonly, body.guest #btnAdd, body.guest #btnMic, body.guest .gdel, body.guest button.x, body.guest .mpen,
 body.guest #editForm, body.guest thead button.ic { display:none !important; }
 .guestbadge { display:inline-block; margin-left:8px; font-size:.75rem; font-weight:600; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:2px 10px; vertical-align:middle; }
+.codebox { font:600 1.1rem ui-monospace,Menlo,Consolas,monospace; letter-spacing:.06em; padding:12px; background:var(--field); border:1px dashed var(--line); border-radius:8px; word-break:break-all; user-select:all; margin:8px 0; }
+.chk { display:flex; align-items:center; gap:8px; font-size:.9rem; }
+.chk input { width:auto; }
 .acct { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 0; border-bottom:1px solid var(--line); }
 .rank { color:var(--muted); font-weight:600; margin-right:6px; }
 .rlist .other { margin-top:2px; }
@@ -223,8 +226,10 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
   <input type="text" id="user" name="username" placeholder="Identifiant" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="40">
   <input type="password" id="pw" name="password" placeholder="Mot de passe" autocomplete="current-password" required>
   <button type="submit" id="go">Déverrouiller</button>
+  <button type="button" class="ghost" id="forgot">Mot de passe oublié ?</button>
+  <p class="help" id="recHelp" hidden>Saisis le code de récupération que tu as noté en activant la protection (Réglages › Sécurité). Tu pourras ensuite choisir un nouveau mot de passe.</p>
   <p class="err" id="err" role="alert"></p>
-  <p class="help">Ton navigateur peut enregistrer l'identifiant et le mot de passe pour les pré-remplir la prochaine fois. Compte principal : mets l'identifiant que tu veux.</p>
+  <p class="help" id="loginHelp">Ton navigateur peut enregistrer l'identifiant et le mot de passe pour les pré-remplir la prochaine fois. Compte principal : mets l'identifiant que tu veux.</p>
 </form>
 
 <div id="wall"></div>
@@ -260,7 +265,7 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
     <div class="setrow"><span class="label">Chiffre « valeur »</span><input type="color" id="cVal" aria-label="Couleur du chiffre de la valeur de la collection"><button type="button" class="ghost" data-reset="cVal">Par défaut</button></div>
     <div class="setrow"><span class="label">Texte</span><input type="color" id="cText" aria-label="Couleur du texte (noms et prix)"><button type="button" class="ghost" data-reset="cText">Par défaut</button><span class="meta">noms des cartes, prix, titres</span></div>
     <p class="help">L'image reste uniquement dans ce navigateur : elle n'est ni envoyée, ni enregistrée sur GitHub. Il faut la choisir de nouveau sur chaque appareil. Le thème, les couleurs et l'affichage (grille/liste, montants cachés) sont aussi retenus ici.</p>
-    <div class="row"><button type="button" class="ghost ownonly" id="setToken">Clé d'accès GitHub…</button><button type="button" class="ghost ownonly" id="acctOpen">Comptes invités…</button><button type="button" class="ghost" id="logout">Se déconnecter</button></div>
+    <div class="row"><button type="button" class="ghost ownonly" id="setToken">Clé d'accès GitHub…</button><button type="button" class="ghost ownonly" id="acctOpen">Comptes invités…</button><button type="button" class="ghost ownonly" id="secOpen">Sécurité…</button><button type="button" class="ghost" id="logout">Se déconnecter</button></div>
     <p class="err" id="setErr" role="alert"></p>
   </section>
 
@@ -301,6 +306,28 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
     <div class="row"><button type="button" class="ghost" id="aGen">Générer un mot de passe</button><button type="submit" id="aGo">Créer le compte</button></div>
     <p class="help">Donne-lui l'identifiant et le mot de passe en main propre ou par un message privé, jamais au même endroit public que l'adresse du site.</p>
     <p class="err" id="aErr" role="alert"></p>
+  </form>
+
+  <form class="panel ownonly" id="secPanel" hidden autocomplete="off">
+    <div class="charthead"><h2>Sécurité</h2><button type="button" class="ghost" id="secClose">Fermer</button></div>
+    <p class="help" style="margin-top:0" id="secState"></p>
+    <div id="secForm">
+      <div class="grid" style="margin-top:12px">
+        <label id="sCurRow">Mot de passe actuel <input id="sCur" type="password" autocomplete="current-password"></label>
+        <label>Nouveau mot de passe (12 caractères min.) <input id="sNew" type="password" maxlength="100" autocomplete="new-password"></label>
+        <label>Confirmer le nouveau mot de passe <input id="sNew2" type="password" maxlength="100" autocomplete="new-password"></label>
+      </div>
+      <div class="row"><button type="button" class="ghost" id="sGen">Générer un mot de passe solide</button><button type="submit" id="sGo">Enregistrer</button><button type="button" class="ghost" id="sNewCode">Nouveau code de récupération</button></div>
+      <p class="help">Choisis un mot de passe long (16 caractères ou une phrase de plusieurs mots) et propre à ce site. Le changement prend environ une minute à s'enregistrer.</p>
+    </div>
+    <div id="secCodeBox" hidden>
+      <p class="help"><strong>Ton code de récupération</strong> : il permet de retrouver l'accès si tu perds ton mot de passe. Il ne sera plus jamais affiché : note-le maintenant dans un endroit sûr (gestionnaire de mots de passe, papier rangé), pas dans les mêmes endroits que ce site.</p>
+      <div class="codebox" id="secCode"></div>
+      <div class="row"><button type="button" class="ghost" id="secCopy">Copier</button>
+        <label class="chk"><input type="checkbox" id="secNoted"> Je l'ai noté</label>
+        <button type="button" id="secFinish" disabled>Terminer</button><button type="button" class="ghost" id="secCancel">Annuler</button></div>
+    </div>
+    <p class="err" id="sErr" role="alert"></p>
   </form>
 
   <form class="panel" id="tokenPanel" hidden autocomplete="off">
@@ -426,6 +453,11 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
 </main>
 
 <script>
+// Anti-clickjacking : le site refuse de s'afficher à l'intérieur d'un cadre (iframe) d'une autre page.
+if (window.top !== window.self) {
+  document.body.textContent = "Ce site ne s'affiche pas dans un cadre. Ouvre-le directement dans ton navigateur.";
+  throw new Error("framed");
+}
 const fmt = v => (v == null || isNaN(v)) ? "—" : v.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
 const signed = v => (v == null || isNaN(v)) ? "—" : (v > 0 ? "+" : "") + fmt(v);
 const $ = id => document.getElementById(id);
@@ -1659,6 +1691,127 @@ async function removeAccount(id, name) {
   await sendKeyring({ salt: r.salt, accounts: r.accounts }, "Compte « " + name + " » supprimé et clé changée.");
 }
 
+// ---------- mot de passe de connexion + code de récupération (data/auth.json) ----------
+// La clé interne (celle qui chiffre le coffre) est enveloppée deux fois dans data/auth.json : une fois par le mot de
+// passe de connexion (modifiable), une fois par un code de récupération aléatoire de 130 bits. Sans auth.json,
+// le site fonctionne comme avant : le mot de passe saisi est directement la clé.
+let auth = null;
+async function loadAuth() {
+  const token = getToken();
+  let r = token ? await fetch(API + "/contents/data/auth.json?ref=main", { cache: "no-store",
+    headers: { Authorization: "Bearer " + token, Accept: "application/vnd.github.raw+json" } }).catch(() => null) : null;
+  if (!r || !r.ok) r = await fetch("data/auth.json?t=" + Date.now(), { cache: "no-store" }).catch(() => null);
+  auth = r && r.ok ? await r.json().catch(() => null) : null;
+  if (!auth || !auth.login || !auth.recovery) auth = null;
+  return auth;
+}
+const CODE_ABC = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const genCode = () => [...crypto.getRandomValues(new Uint8Array(26))].map(x => CODE_ABC[x & 31]).join("").replace(/(.{5})(?!$)/g, "$1-");
+const normCode = c => String(c || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+async function wrapMaster(secret, master) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  return { salt: toB64(salt), iter: 600000, wrap: await seal(await bitsFrom(secret, salt, 600000), enc.encode(master)) };
+}
+async function unwrapMaster(secret, b) {
+  return new TextDecoder().decode(await unseal(await bitsFrom(secret, fromB64(b.salt), b.iter), b.wrap));
+}
+async function masterFrom(x) {                        // mot de passe saisi -> clé interne
+  if (await loadAuth().catch(() => null)) { try { return await unwrapMaster(x, auth.login); } catch (e) {} }
+  return x;                                           // ancien fonctionnement : le mot de passe est la clé
+}
+async function masterFromCode(code) {
+  if (!(await loadAuth().catch(() => null))) throw new Error("noauth");
+  try { return await unwrapMaster(normCode(code), auth.recovery); } catch (e) { throw new Error("code"); }
+}
+
+let secPending = null, secReset = false;
+const secErr = t => { $("sErr").textContent = t || ""; };
+async function openSecurity(reset) {
+  secReset = !!reset; secPending = null;
+  $("secPanel").hidden = false; $("secForm").hidden = false; $("secCodeBox").hidden = true; secErr("");
+  ["sCur", "sNew", "sNew2"].forEach(id => { $(id).value = ""; $(id).type = "password"; });
+  await loadAuth().catch(() => null);
+  $("secState").textContent = reset ? "Tu es entré avec ton code de récupération. Choisis maintenant un nouveau mot de passe."
+    : auth ? "Protection active : tu te connectes avec un mot de passe que tu peux changer, et un code de récupération existe."
+    : "Pas encore activée : tu te connectes encore avec l'ancien mot de passe, sans code de récupération. Choisis un mot de passe de connexion pour l'activer (un code de récupération te sera donné).";
+  $("sCurRow").hidden = reset;
+  $("sNewCode").hidden = !auth || reset;
+  $("sGo").textContent = reset ? "Choisir ce mot de passe" : auth ? "Changer le mot de passe" : "Activer";
+  $("secPanel").scrollIntoView({ block: "nearest" });
+}
+async function secCheckCurrent() {
+  if (secReset) return true;
+  if ((await masterFrom($("sCur").value)) === state.password) return true;
+  secErr("Le mot de passe actuel est incorrect."); return false;
+}
+function secShowCode(code) {
+  $("secCode").textContent = code; $("secNoted").checked = false; $("secFinish").disabled = true;
+  $("secForm").hidden = true; $("secCodeBox").hidden = false;
+}
+async function secSubmit(ev) {
+  ev.preventDefault(); secErr("");
+  const np = $("sNew").value;
+  if (np.length < 12) return secErr("Nouveau mot de passe trop court : 12 caractères minimum.");
+  if (np !== $("sNew2").value) return secErr("Les deux nouveaux mots de passe ne sont pas identiques.");
+  if (np === state.password) return secErr("Choisis un mot de passe différent de l'ancien.");
+  $("sGo").disabled = true;
+  try {
+    if (!(await secCheckCurrent())) return;
+    const login = await wrapMaster(np, state.password);
+    if (auth) { secPending = { newPw: np, login, recovery: auth.recovery }; await secCommit(); }
+    else {
+      const code = genCode();
+      secPending = { newPw: np, code, login, recovery: await wrapMaster(normCode(code), state.password) };
+      secShowCode(code);
+    }
+  } catch (e) { secErr("Impossible : " + (e.message || "erreur")); }
+  finally { $("sGo").disabled = false; }
+}
+async function secNewCode() {
+  secErr("");
+  $("sNewCode").disabled = true;
+  try {
+    if (!(await secCheckCurrent())) return;
+    const code = genCode();
+    secPending = { code, login: auth.login, recovery: await wrapMaster(normCode(code), state.password) };
+    secShowCode(code);
+  } catch (e) { secErr("Impossible : " + (e.message || "erreur")); }
+  finally { $("sNewCode").disabled = false; }
+}
+async function secCommit() {
+  const p = secPending; if (!p) return;
+  if (state.busy) return secErr("Une modification est déjà en cours, patiente un instant.");
+  state.busy = true; $("secFinish").disabled = true; $("sGo").disabled = true; secErr("");
+  const stamp = String(Date.now());
+  try { await send({ action: "set_auth", stamp, auth: { v: 1, login: p.login, recovery: p.recovery } }); }
+  catch (e) { state.busy = false; $("sGo").disabled = false; $("secFinish").disabled = !$("secNoted").checked; if (e.message === "token") openToken(); return secErr(explain(e)); }
+  setStatus("Envoyé. Enregistrement en cours, compte 1 minute environ…");
+  const v = await waitFor(x => !!x && x.auth_stamp === stamp);
+  state.busy = false; $("sGo").disabled = false;
+  if (!v) { $("secFinish").disabled = !$("secNoted").checked; return secErr("Pas encore confirmé. Patiente 2 minutes puis réessaie : ton ancien mot de passe fonctionne toujours."); }
+  state.vault = v;
+  try {                                               // vérifie que les nouvelles enveloppes s'ouvrent vraiment
+    await loadAuth();
+    if (p.newPw && (await unwrapMaster(p.newPw, auth.login)) !== state.password) throw new Error("login");
+    if (p.code && (await unwrapMaster(normCode(p.code), auth.recovery)) !== state.password) throw new Error("code");
+  } catch (e) { return secErr("Enregistré, mais la vérification a échoué : ne ferme pas cette page, ton ancien mot de passe fonctionne toujours."); }
+  if (p.newPw) { try { const s = JSON.parse(sessionStorage.getItem("k") || "{}"); sessionStorage.setItem("k", JSON.stringify({ u: s.u || "", p: p.newPw })); } catch (e) {} }
+  secPending = null; secReset = false; $("secCode").textContent = ""; $("secCodeBox").hidden = true; $("secForm").hidden = false;
+  ["sCur", "sNew", "sNew2"].forEach(id => { $(id).value = ""; });
+  $("secState").textContent = "Protection active : tu te connectes avec un mot de passe que tu peux changer, et un code de récupération existe.";
+  $("sCurRow").hidden = false; $("sNewCode").hidden = false; $("sGo").textContent = "Changer le mot de passe";
+  setStatus(p.code && !p.newPw ? "Nouveau code de récupération enregistré (l'ancien ne marche plus)." : "Mot de passe de connexion enregistré.");
+}
+
+let recoverMode = false;
+function setRecover(on) {
+  recoverMode = on; $("err").textContent = "";
+  $("user").hidden = on; $("pw").value = ""; $("pw").type = on ? "text" : "password";
+  $("pw").placeholder = on ? "Code de récupération" : "Mot de passe"; $("pw").autocomplete = on ? "off" : "current-password";
+  $("go").textContent = on ? "Récupérer l'accès" : "Déverrouiller";
+  $("forgot").textContent = on ? "Retour à la connexion" : "Mot de passe oublié ?"; $("recHelp").hidden = !on; $("loginHelp").hidden = on;
+}
+
 function openToken() {
   $("tokenPanel").hidden = false;
   $("tokenState").textContent = getToken() ? "Un jeton est enregistré dans ce navigateur." : "Aucun jeton enregistré.";
@@ -1666,10 +1819,10 @@ function openToken() {
 }
 
 // ---------- démarrage ----------
-async function unlock(password, user) {
+async function unlock(password, user, direct) {
   state.guestKey = null;
-  if (user && await guestUnlock(user, password)) state.password = null;
-  else state.password = password;
+  if (!direct && user && await guestUnlock(user, password)) state.password = null;
+  else state.password = direct ? password : await masterFrom(password);
   const guest = !!state.guestKey;
   document.body.classList.toggle("guest", guest);
   $("guestBadge").hidden = !guest;
@@ -1688,12 +1841,22 @@ $("login").addEventListener("submit", async ev => {
   btn.disabled = true; err.textContent = "";
   if (failures) await sleep(Math.min(30, 2 ** failures) * 1000);   // freine les essais en série
   try {
-    await unlock(pw, user);
-    failures = 0;
-    try { sessionStorage.setItem("k", JSON.stringify({ u: user, p: pw })); } catch (e) {}
+    if (recoverMode) {
+      const master = await masterFromCode(pw);
+      await unlock(master, "", true);
+      failures = 0;
+      try { sessionStorage.setItem("k", JSON.stringify({ u: "", p: master })); } catch (e) {}
+      setRecover(false); openSecurity(true);
+    } else {
+      await unlock(pw, user);
+      failures = 0;
+      try { sessionStorage.setItem("k", JSON.stringify({ u: user, p: pw })); } catch (e) {}
+    }
   } catch (e) {
     state.password = null; state.guestKey = null; failures++;
-    err.textContent = e.message === "password" ? "Identifiant ou mot de passe incorrect."
+    err.textContent = e.message === "noauth" ? "Aucun code de récupération n'a encore été créé : connecte-toi avec ton mot de passe, puis Réglages › Sécurité."
+      : e.message === "code" ? "Code de récupération incorrect."
+      : e.message === "password" ? (recoverMode ? "Code de récupération incorrect." : "Identifiant ou mot de passe incorrect.")
       : e.message === "rotated" ? "Ce compte invité n'est plus valable. Demande un nouvel accès."
       : "Données indisponibles pour le moment.";
   } finally {
@@ -1787,6 +1950,16 @@ $("btnSet").addEventListener("click", () => { $("setPanel").hidden = !$("setPane
 $("setClose").addEventListener("click", () => { $("setPanel").hidden = true; });
 $("setToken").addEventListener("click", openToken);
 $("acctOpen").addEventListener("click", () => openAccounts().catch(() => { $("aErr").textContent = "Comptes indisponibles pour le moment."; }));
+$("secOpen").addEventListener("click", () => openSecurity(false));
+$("secClose").addEventListener("click", () => { $("secPanel").hidden = true; secPending = null; $("secCode").textContent = ""; });
+$("secPanel").addEventListener("submit", secSubmit);
+$("sNewCode").addEventListener("click", secNewCode);
+$("sGen").addEventListener("click", () => { const g = genPassword(); ["sNew", "sNew2"].forEach(id => { $(id).type = "text"; $(id).value = g; }); });
+$("secNoted").addEventListener("change", () => { $("secFinish").disabled = !$("secNoted").checked; });
+$("secFinish").addEventListener("click", secCommit);
+$("secCancel").addEventListener("click", () => { secPending = null; $("secCode").textContent = ""; $("secCodeBox").hidden = true; $("secForm").hidden = false; secErr(""); });
+$("secCopy").addEventListener("click", async () => { try { await navigator.clipboard.writeText($("secCode").textContent); $("secCopy").textContent = "Copié"; } catch (e) { $("secCopy").textContent = "Sélectionne et copie à la main"; } });
+$("forgot").addEventListener("click", () => setRecover(!recoverMode));
 $("acctClose").addEventListener("click", () => { $("acctPanel").hidden = true; });
 $("acctPanel").addEventListener("submit", addAccount);
 $("aGen").addEventListener("click", () => { $("aPw").value = genPassword(); });
