@@ -29,6 +29,7 @@ import update_prices  # chiffrement et accès TCGdex déjà utilisés pour le co
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "data" / "research.json"
+HIST = ROOT / "data" / "watch_history.json"
 PAUSE_S = 2            # politesse envers GCC : 2 s entre deux pages
 PRIX_MIN, PRIX_MAX = 6, 6000    # tranches de prix de vente CCC parcourues (€)
 PAS = 1.035            # chaque tranche couvre +3,5 % : environ 200 pages par note
@@ -171,6 +172,33 @@ def prix_loose(titre, card):
     return None, cm.get("idProduct")
 
 
+def moyennes(titre, card):
+    """Moyennes Cardmarket (toutes langues) sur 1, 7 et 30 jours + tendance : sert à repérer les cartes qui s'envolent."""
+    cm = (card.get("pricing") or {}).get("cardmarket") or {}
+    suf = "-holo" if "reverse" in titre.lower() else ""
+    out = {}
+    for k in ("avg1", "avg7", "avg30", "trend"):
+        v = cm.get(k + suf) or cm.get(k)
+        if v:
+            out[k] = round(float(v), 2)
+    return out or None
+
+
+def maj_historique(cartes, password):
+    """Ajoute le prix tendance du jour de chaque carte à data/watch_history.json (chiffré, 120 jours gardés)."""
+    jours = {}
+    if HIST.exists():
+        try:
+            jours = (update_prices.decrypt(json.loads(HIST.read_text(encoding="utf-8")), password) or {}).get("days", {})
+        except Exception as exc:
+            print(f"  historique illisible, on repart de zéro ({exc})")
+    jours[date.today().isoformat()] = {str(c["cm_id"]): c["cm"]["trend"] for c in cartes if c.get("cm_id") and (c.get("cm") or {}).get("trend")}
+    for d in sorted(jours)[:-120]:
+        del jours[d]
+    HIST.write_text(json.dumps(update_prices.encrypt({"days": jours}, password)), encoding="utf-8")
+    print(f"Historique des prix : {len(jours)} jour(s) gardé(s).")
+
+
 # ---------- principal ----------
 def main():
     plain = "--plain" in sys.argv
@@ -230,7 +258,7 @@ def main():
             "nom": card.get("name") or v["titre"], "titre_gcc": v["titre"],
             "set": v["set"], "numero": v["numero"], "annee": v["annee"],
             "image": f"{card['image']}/low.webp" if card.get("image") else None,
-            "loose": c["loose"], "cm_id": c["cm_id"],
+            "loose": c["loose"], "cm_id": c["cm_id"], "cm": moyennes(v["titre"], card),
             "ccc": stats,
         })
     data = {"updated": date.today().isoformat(), "cartes": cartes,
@@ -241,6 +269,10 @@ def main():
         Path(sys.argv[-1]).write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     else:
         OUT.write_text(json.dumps(update_prices.encrypt(data, password)), encoding="utf-8")
+        try:
+            maj_historique(cartes, password)
+        except Exception as exc:
+            print(f"  historique non mis à jour ({exc})")
         print("Recherche chiffrée enregistrée dans data/research.json.")
 
 
