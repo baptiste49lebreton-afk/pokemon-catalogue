@@ -435,6 +435,7 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
         <label>Hausse minimum <select id="wUp"><option value="5">+5 % et plus</option><option value="10">+10 % et plus</option><option value="15">+15 % et plus</option><option value="20">+20 % et plus</option><option value="30">+30 % et plus</option><option value="50">+50 % et plus</option><option value="100">+100 % et plus</option><option value="200">+200 % et plus</option><option value="300">+300 % et plus</option><option value="500">+500 % et plus</option></select></label>
         <label>Prix minimum <select id="wMin"><option value="0">Aucun minimum</option><option value="5">5 €</option><option value="10">10 €</option><option value="20">20 €</option><option value="50">50 €</option><option value="100">100 €</option><option value="200">200 €</option></select></label>
         <label>Prix maximum <select id="wMax"><option value="">Sans limite</option><option value="10">10 €</option><option value="20">20 €</option><option value="50">50 €</option><option value="100">100 €</option><option value="200">200 €</option><option value="500">500 €</option><option value="1000">1000 €</option><option value="2000">2000 €</option></select></label>
+        <label>À partir de l'année <select id="wYear"><option value="0">Toutes les années</option><option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option><option value="2023">2023</option><option value="2022">2022</option><option value="2021">2021</option><option value="2020">2020</option><option value="2019">2019</option><option value="2018">2018</option><option value="2017">2017</option><option value="2016">2016</option><option value="2015">2015</option><option value="2014">2014</option><option value="2013">2013</option><option value="2012">2012</option><option value="2011">2011</option><option value="2010">2010</option><option value="2009">2009</option><option value="2008">2008</option><option value="2007">2007</option><option value="2006">2006</option><option value="2005">2005</option><option value="2004">2004</option><option value="2003">2003</option><option value="2002">2002</option><option value="2001">2001</option><option value="2000">2000</option><option value="1999">1999</option></select></label>
         <label>Classer par <select id="wSort"><option value="pct">Plus forte évolution (%)</option><option value="gain">Plus forte hausse en €</option><option value="prix_desc">Prix le plus haut</option><option value="prix_asc">Prix le plus bas</option></select></label>
       </div>
       <div class="setrow" style="margin-top:12px; align-items:center; gap:10px; flex-wrap:wrap">
@@ -1336,11 +1337,11 @@ function liquidity(c, s) {
 // ---------- page « À surveiller » : cartes dont le prix monte vite ----------
 let watch = null;     // cartes à surveiller (data/watch.json) : toutes les cartes Pokoya en hausse, avec moyennes et 14 derniers jours
 let researchByKey = new Map();   // carte de la recherche par clé (prix CCC d'une carte à surveiller)
-[["wUp", "w_up", "20"], ["wMin", "w_min", "10"], ["wMax", "w_max", ""], ["wSort", "w_sort", "pct"]].forEach(([id, k, d]) => {
+[["wUp", "w_up", "20"], ["wMin", "w_min", "10"], ["wMax", "w_max", ""], ["wYear", "w_year", "2018"], ["wSort", "w_sort", "pct"]].forEach(([id, k, d]) => {
   const v = pref.get(k, d), sel = $(id);
   if (v !== "" && ![...sel.options].some(o => o.value === v)) sel.add(new Option(v + (id === "wUp" ? " %" : " €"), v));
   sel.value = v; if (sel.value !== v) sel.value = d; });
-$("wApply").addEventListener("click", () => { [["wUp", "w_up"], ["wMin", "w_min"], ["wMax", "w_max"], ["wSort", "w_sort"]].forEach(([id, k]) => pref.set(k, $(id).value)); renderWatch(); });
+$("wApply").addEventListener("click", () => { [["wUp", "w_up"], ["wMin", "w_min"], ["wMax", "w_max"], ["wYear", "w_year"], ["wSort", "w_sort"]].forEach(([id, k]) => pref.set(k, $(id).value)); renderWatch(); });
 const shortDay = d => new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
 function miniTable(title, heads, rows) {
   const box = el("div"), t = el("table", "mini"), th = el("tr");
@@ -1397,21 +1398,21 @@ function watchCell(c, rank, extraText) {
   return [imgCell, info];
 }
 function renderWatch() {
-  const up = Number(pref.get("w_up", "20")) || 20, min = rNum("w_min", 10), max = rNum("w_max", Infinity), sort = pref.get("w_sort", "pct");
+  const up = Number(pref.get("w_up", "20")) || 20, min = rNum("w_min", 10), max = rNum("w_max", Infinity), sort = pref.get("w_sort", "pct"), year = Number(pref.get("w_year", "2018")) || 0;
   const box = $("wList"), colBox = $("wCol");
   if (!research && !watch) { $("wInfo").textContent = researchErr; box.replaceChildren(); colBox.replaceChildren(); return; }
   const range = (min ? " ≥ " + min + " €" : "") + (max < Infinity ? " ≤ " + max + " €" : "");
   // 1. toutes les cartes Pokoya en hausse : moyenne 7 jours / moyenne 30 jours (prix FR)
   const all = (watch && watch.cartes) || [];
   const rows = all.map(c => ({ c, pct: (c.avg7 / c.avg30 - 1) * 100, gain: c.avg7 - c.avg30 }))
-    .filter(r => r.pct >= up && r.c.avg7 >= min && r.c.avg7 <= max)
+    .filter(r => r.pct >= up && r.c.avg7 >= min && r.c.avg7 <= max && (!year || Number(r.c.annee) >= year))
     .sort((a, b) => sort === "gain" ? b.gain - a.gain : sort === "prix_desc" ? b.c.avg7 - a.c.avg7 : sort === "prix_asc" ? a.c.avg7 - b.c.avg7 : b.pct - a.pct);
   $("wInfo").textContent = watch
     ? "Relevé du " + fmtDay(watch.updated) + " · " + watch.pokoya + " cartes Pokoya à 1 € ou plus, " + watch.suivies + " avec assez d'historique · "
-      + rows.length + " en hausse d'au moins " + up + " % (prix moyen 7 jours" + (range || " : tous") + ")" + (rows.length > 300 ? ", les 300 premières affichées." : ".")
+      + rows.length + " en hausse d'au moins " + up + " % (prix moyen 7 jours" + (range || " : tous") + (year ? ", cartes de " + year + " et après" : "") + ")" + (rows.length > 300 ? ", les 300 premières affichées." : ".")
     : "";
   if (!watch) box.replaceChildren(el("p", "help", "La liste de toutes les cartes Pokoya arrive avec le prochain relevé automatique (chaque matin à 4 h 15, heure UTC). Reviens ensuite."));
-  else if (!rows.length) box.replaceChildren(el("p", "help", watch.suivies ? "Aucune carte ne correspond : baisse la hausse minimum ou élargis les prix, puis clique sur « Actualiser »." : "L'historique des cartes se construit : il faut au moins 10 jours de prix pour calculer les moyennes. Reviens dans quelques jours."));
+  else if (!rows.length) box.replaceChildren(el("p", "help", watch.suivies ? "Aucune carte ne correspond : baisse la hausse minimum, élargis les prix ou recule l'année, puis clique sur « Actualiser »." : "L'historique des cartes se construit : il faut au moins 10 jours de prix pour calculer les moyennes. Reviens dans quelques jours."));
   else {
     const trs = rows.slice(0, 300).map((r, i) => {
       const { c } = r, rc = researchByKey.get(c.k), tr = el("tr"), [imgCell, info] = watchCell(c, i + 1, cccLine(rc || {}));
@@ -1442,7 +1443,7 @@ function renderWatch() {
     if (!past || !(past[1] > 0)) return;
     enoughHistory = true;
     const pct = (vNow / past[1] - 1) * 100;
-    if (pct >= up && vNow >= min && vNow <= max) mine.push({ c, pct, past, vNow, days, gain: vNow - past[1] });
+    if (pct >= up && vNow >= min && vNow <= max && (!year || !(Number(c.annee) > 0) || Number(c.annee) >= year)) mine.push({ c, pct, past, vNow, days, gain: vNow - past[1] });
   });
   mine.sort((a, b) => sort === "gain" ? b.gain - a.gain : sort === "prix_desc" ? b.vNow - a.vNow : sort === "prix_asc" ? a.vNow - b.vNow : b.pct - a.pct);
   if (!mine.length) colBox.replaceChildren(el("p", "help", enoughHistory ? "Aucune de tes cartes ne correspond à ces réglages en ce moment." : "L'historique de ta collection est encore trop court (moins d'une semaine) pour repérer une hausse."));
@@ -1473,7 +1474,7 @@ function openFiche(c) { window.open(location.pathname + "?carte=" + encodeURICom
 function shopQuery(c) { return [String(c.nom).replace(/-/g, " "), String(c.numero || "").replace(/\/.*$/, "")].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(); }
 function shopUrl(site, c) {
 const q = encodeURIComponent(shopQuery(c));
-if (site === "vinted") return "https://www.vinted.fr/catalog?search_text=" + q + SHOP_VINTED_STATES.map(s => "&status_ids[]=" + s).join("") + "&order=price_low_to_high&price_from=2";
+if (site === "vinted") return "https://www.vinted.fr/catalog?search_text=" + q + SHOP_VINTED_STATES.map(s => "&status_ids[]=" + s).join("") + "&order=relevance&price_from=2";
 if (site === "ebay") return "https://www.ebay.fr/sch/i.html?_nkw=" + q + "&LH_BIN=1&_sop=15&_udlo=2";
 if (site === "cardmarket") return c.cm_id ? cmLink(c) + "&language=2&minCondition=" + SHOP_CM_MIN_CONDITION : "https://www.cardmarket.com/fr/Pokemon/Products/Search?searchString=" + q;
 return "";
@@ -1492,7 +1493,7 @@ sel.setAttribute("aria-label", "Chercher cette carte sur un site d’achat");
 [["", "Acheter sur…"], ["vinted", "Vinted"], ["ebay", "eBay"], ["cardmarket", "Cardmarket"]].forEach(o => sel.append(new Option(o[1], o[0])));
 sel.addEventListener("change", () => { const u = shopUrl(sel.value, c); sel.value = ""; if (u) window.open(u, "_blank", "noopener"); });
 bar.append(el("span", "label", "Chercher cette carte"), sel);
-const help = el("p", "help", "La recherche « " + shopQuery(c) + " » s’ouvre dans un nouvel onglet, et tu achètes sur le site choisi. Vinted : neuf ou très bon état, du moins cher au plus cher, sans les annonces à 1 €. eBay : achat immédiat (pas d’enchères), du moins cher au plus cher, dès 2 €. Pas de filtre de langue sur Vinted ni eBay : regarde les photos. Cardmarket : cartes en français, bon état ou mieux.");
+const help = el("p", "help", "La recherche « " + shopQuery(c) + " » s’ouvre dans un nouvel onglet, et tu achètes sur le site choisi. Vinted : neuf ou très bon état, classé par pertinence, sans les annonces à 1 €. eBay : achat immédiat (pas d’enchères), du moins cher au plus cher, dès 2 €. Pas de filtre de langue sur Vinted ni eBay : regarde les photos. Cardmarket : cartes en français, bon état ou mieux.");
 panel.append(top, bar, help, drawFiche(c));
 box.replaceChildren(panel);
 }
