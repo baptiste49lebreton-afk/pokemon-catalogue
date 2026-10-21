@@ -1412,6 +1412,32 @@ function buyBar(c) {   // « Acheter sur… » : même recherche et mêmes filtr
   bar.append(el("span", "label", "Chercher cette carte"), sel);
   return bar;
 }
+function liqBlock(c, r) {   // petit encart « Liquidité » : même calcul qu'en Recherche (ventes CCC + hype du Pokémon)
+  const box = el("div"); box.style.cssText = "flex:0 1 240px; min-width:200px";
+  box.append(el("div", "meta", "Liquidité"));
+  const hype = hypeOf(c.nom), stars = Math.max(1, Math.min(5, Math.round(hype / 20))), starTxt = "★".repeat(stars) + "☆".repeat(5 - stars);
+  let best = null;
+  ["10", "9.5", "9"].forEach(n => { const sale = r.ccc && r.ccc[n]; if (!sale) return;
+    const l = liquidity(c, sale); if (!best || l.score > best.l.score) best = { n, sale, l }; });
+  const col = { a: "var(--up)", b: "var(--accent)", c: "var(--muted)", d: "var(--down)" };
+  const score = best ? best.l.score : hype, fill = best ? col[best.l.cls] : "var(--muted)";
+  const head = el("div"); head.style.cssText = "display:flex; align-items:baseline; gap:8px; margin:4px 0 7px";
+  if (best) head.append(el("span", "pill liq-" + best.l.cls, best.l.label), el("span", "meta", "score " + score + " / 100"));
+  else head.append(el("span", "pill liq-c", "Non mesurée"), el("span", "meta", "hype " + hype + " / 100"));
+  const track = el("div"); track.style.cssText = "position:relative; height:8px; border-radius:4px; background:var(--line); overflow:hidden";
+  track.title = "Lent : moins de 50 · Moyen : 50 à 71 · Liquide : 72 à 87 · Très liquide : 88 et plus";
+  const bar = el("div"); bar.style.cssText = "height:100%; border-radius:4px; width:" + Math.max(2, Math.min(100, score)) + "%; background:" + fill + (best ? "" : "; opacity:.55");
+  track.append(bar);
+  [50, 72, 88].forEach(t => { const tick = el("div"); tick.style.cssText = "position:absolute; top:0; bottom:0; width:2px; left:" + t + "%; background:var(--bg); opacity:.8"; track.append(tick); });
+  const lab = el("div", "meta"); lab.style.cssText = "position:relative; height:14px; margin-top:3px; font-size:.7rem";
+  [["Lent", 25], ["Moyen", 61], ["Liquide", 80], ["Top", 94]].forEach(([t, x]) => { const sp = el("span", "", t); sp.style.cssText = "position:absolute; transform:translateX(-50%); left:" + x + "%"; lab.append(sp); });
+  box.append(head, track, lab);
+  box.append(el("div", "meta", "Hype du Pokémon " + starTxt));
+  box.append(el("div", "meta", best
+    ? "CCC " + best.n + " : " + best.sale.n + " vente" + (best.sale.n > 1 ? "s" : "") + ", dernière il y a " + best.l.days + " j"
+    : "Pas de vente CCC relevée : la barre montre seulement la popularité du Pokémon, pas la facilité de revente."));
+  return box;
+}
 function watchDetail(c) {
   const box = el("div"); box.style.cssText = "display:flex; flex-wrap:wrap; gap:8px 28px; padding:4px 2px 10px";
   const ref = c.avg30, r = researchByKey.get(c.k) || {};
@@ -1420,6 +1446,7 @@ function watchDetail(c) {
   box.append(miniTable("Résumé", ["", "Prix", "vs moy. 30 j"], [
     ["Moyenne 30 jours", fmt(c.avg30), ""], ["Moyenne 7 jours", fmt(c.avg7), variation(c.avg7, ref)],
     ["Moyenne 1 jour", fmt(c.avg1), variation(c.avg1, ref)]].filter(x => x[1] !== "—")));
+  box.append(liqBlock(c, r));
   box.append(miniTable("Prix en CCC (ventes Graded Card Center)", ["Note", "Prix", "Ventes", "Dernière"], ["10", "9.5", "9"].map(n => {
     const s = r.ccc && r.ccc[n];
     return ["CCC " + n, s ? fmt(s.prix) : "—", s ? s.n : "0", s ? shortDay(s.derniere) : ""]; })));
