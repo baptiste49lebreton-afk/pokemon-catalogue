@@ -1351,9 +1351,53 @@ function miniTable(title, heads, rows) {
   box.append(t); return box;
 }
 const variation = (v, ref) => ref > 0 && v > 0 ? signedPct((v / ref - 1) * 100) : "";
-function dailyRows(days) {   // [[date, prix]] trié ; 14 derniers jours, le plus récent en haut
-  const out = days.map((p, i) => [shortDay(p[0]), fmt(p[1]), i ? variation(p[1], days[i - 1][1]) : ""]);
-  return out.slice(-14).reverse();
+function priceChart(title, days, ref) {   // courbe jour par jour ; ref = moyenne 30 jours (ligne pointillée)
+  const pts = days.filter(p => p[1] > 0).map(p => ({ d: p[0], v: p[1] }));
+  const box = el("div"); box.style.cssText = "flex:1 1 380px; min-width:260px; max-width:640px";
+  box.append(el("div", "meta", title));
+  if (pts.length < 2) { box.append(el("p", "meta", "La courbe se dessine dès qu'il y a au moins deux jours de prix.")); return box; }
+  const plot = el("div", "plot"), W = 560, H = 190, L = 58, R = 10, T = 12, B = 24, line = ref > 0 ? ref : null;
+  let lo = Math.min(...pts.map(p => p.v), line == null ? Infinity : line), hi = Math.max(...pts.map(p => p.v), line == null ? 0 : line);
+  if (hi - lo < 0.01) { lo -= 1; hi += 1; } else { const pad = (hi - lo) * 0.1; lo -= pad; hi += pad; }
+  lo = Math.max(0, lo);
+  const t = d => Date.parse(d + "T00:00:00Z"), t0 = t(pts[0].d), t1 = t(pts[pts.length - 1].d);
+  const X = p => L + (t(p.d) - t0) / (t1 - t0) * (W - L - R), Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  const dec = hi - lo >= 10 ? 0 : 2, money0 = v => v.toLocaleString("fr-FR", { minimumFractionDigits: dec, maximumFractionDigits: dec }) + " €";
+  const svg = sv("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Courbe du prix jour par jour, " + pts.length + " relevés" });
+  for (let i = 0; i < 3; i++) {
+    const v = lo + (hi - lo) * i / 2, y = Y(v);
+    svg.append(sv("line", { x1: L, x2: W - R, y1: y, y2: y, stroke: "var(--line)", "stroke-width": 1 }));
+    const lab = sv("text", { x: L - 8, y: y + 4, "text-anchor": "end", fill: "var(--muted)", "font-size": 12 }); lab.textContent = money0(v); svg.append(lab);
+  }
+  [[0, "start"], [0.5, "middle"], [1, "end"]].forEach(([f, anchor]) => {
+    const lab = sv("text", { x: L + f * (W - L - R), y: H - 6, "text-anchor": anchor, fill: "var(--muted)", "font-size": 12 });
+    lab.textContent = shortDay(new Date(t0 + f * (t1 - t0)).toISOString().slice(0, 10)); svg.append(lab);
+  });
+  if (line != null) {
+    svg.append(sv("line", { x1: L, x2: W - R, y1: Y(line), y2: Y(line), stroke: "var(--fg)", "stroke-opacity": 0.55, "stroke-width": 1.3, "stroke-dasharray": "4 4" }));
+    const tx = sv("text", { x: W - R - 4, y: Y(line) - 6, "text-anchor": "end", fill: "var(--muted)", "font-size": 11, "font-weight": 600 }); tx.textContent = "moy. 30 j"; svg.append(tx);
+  }
+  svg.append(sv("polyline", { points: pts.map(p => X(p).toFixed(1) + "," + Y(p.v).toFixed(1)).join(" "),
+    fill: "none", stroke: "var(--accent)", "stroke-width": 2.2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+  if (pts.length <= 60) pts.forEach(p => svg.append(sv("circle", { cx: X(p).toFixed(1), cy: Y(p.v).toFixed(1), r: 2.6, fill: "var(--accent)" })));
+  const cross = sv("line", { y1: T, y2: H - B, stroke: "var(--muted)", "stroke-opacity": 0.6, "stroke-width": 1, visibility: "hidden" });
+  const dot = sv("circle", { r: 4.5, fill: "var(--accent)", stroke: "var(--bg)", "stroke-width": 2, visibility: "hidden" });
+  const hit = sv("rect", { x: 0, y: 0, width: W, height: H, fill: "transparent" });
+  svg.append(cross, dot, hit);
+  const tip = el("div", "tip"); tip.hidden = true;
+  const show = ev => {
+    const r = svg.getBoundingClientRect(); if (!r.width) return;
+    const mx = (ev.clientX - r.left) / r.width * W;
+    let best = pts[0]; pts.forEach(p => { if (Math.abs(X(p) - mx) < Math.abs(X(best) - mx)) best = p; });
+    const x = X(best), y = Y(best.v), prev = pts[pts.indexOf(best) - 1];
+    cross.setAttribute("x1", x); cross.setAttribute("x2", x); cross.setAttribute("visibility", "visible");
+    dot.setAttribute("cx", x); dot.setAttribute("cy", y); dot.setAttribute("visibility", "visible");
+    tip.replaceChildren(el("strong", "", fmt(best.v)), el("span", "meta", fullDate(best.d) + (prev ? " · " + variation(best.v, prev.v) : "")));
+    tip.style.left = Math.min(92, Math.max(8, x / W * 100)) + "%"; tip.style.top = (y / H * 100) + "%"; tip.hidden = false;
+  };
+  const hide = () => { cross.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden"); tip.hidden = true; };
+  hit.addEventListener("pointermove", show); hit.addEventListener("pointerdown", show); hit.addEventListener("pointerleave", hide);
+  plot.append(svg, tip); box.append(plot); return box;
 }
 function cccLine(c) {
   const parts = ["10", "9.5", "9"].filter(n => c.ccc && c.ccc[n]).map(n => "CCC " + n + " ≈ " + fmt(c.ccc[n].prix));
@@ -1372,13 +1416,10 @@ function watchDetail(c) {
   const box = el("div"); box.style.cssText = "display:flex; flex-wrap:wrap; gap:8px 28px; padding:4px 2px 10px";
   const ref = c.avg30, r = researchByKey.get(c.k) || {};
   box.append(buyBar(researchByKey.get(c.k) || c));
-  box.append(miniTable("Évolution du prix (français Near Mint, Pokoya)", ["", "Prix", "vs moy. 30 j"], [
+  box.append(priceChart("Évolution jour par jour (français Near Mint, Pokoya)", c.j || [], c.avg30));
+  box.append(miniTable("Résumé", ["", "Prix", "vs moy. 30 j"], [
     ["Moyenne 30 jours", fmt(c.avg30), ""], ["Moyenne 7 jours", fmt(c.avg7), variation(c.avg7, ref)],
     ["Moyenne 1 jour", fmt(c.avg1), variation(c.avg1, ref)]].filter(x => x[1] !== "—")));
-  const days = (c.j || []).filter(p => p[1] > 0);
-  box.append(days.length > 1
-    ? miniTable("Jour par jour", ["Jour", "Prix", "Variation"], dailyRows(days))
-    : el("p", "meta", "L'historique jour par jour se remplit à partir de demain."));
   box.append(miniTable("Prix en CCC (ventes Graded Card Center)", ["Note", "Prix", "Ventes", "Dernière"], ["10", "9.5", "9"].map(n => {
     const s = r.ccc && r.ccc[n];
     return ["CCC " + n, s ? fmt(s.prix) : "—", s ? s.n : "0", s ? shortDay(s.derniere) : ""]; })));
@@ -1466,7 +1507,7 @@ function renderWatch() {
       const pct = el("td", "r big up"); pct.append(el("span", "pill up", signedPct(r.pct))); pct.dataset.label = "Hausse";
       tr.append(imgCell, info, before, now, pct);
       tr.classList.add("clk"); tr.tabIndex = 0; tr.title = "Voir l'évolution jour par jour";
-      const open = () => toggleDetail(tr, () => { const b = el("div"); b.style.cssText = "padding:4px 2px 10px"; b.append(buyBar(r.c), miniTable("Jour par jour (prix de la carte)", ["Jour", "Prix", "Variation"], dailyRows(r.days))); return b; }, 5);
+      const open = () => toggleDetail(tr, () => { const b = el("div"); b.style.cssText = "padding:4px 2px 10px"; b.append(buyBar(r.c), priceChart("Évolution jour par jour (prix de la carte)", r.days, null)); return b; }, 5);
       tr.addEventListener("click", ev => { if (!ev.target.closest("a, button")) open(); });
       tr.addEventListener("keydown", ev => { if (ev.key === "Enter" && ev.target === tr) open(); });
       return tr;
