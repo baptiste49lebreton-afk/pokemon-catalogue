@@ -402,8 +402,8 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
       <div class="setrow"><span class="label">Classer par</span>
         <div class="seg" id="rSort" role="group" aria-label="Classer par"><button type="button" data-s="top" title="Cumule rendement, gain et liquidité">Top</button><button type="button" data-s="roi">Rendement %</button><button type="button" data-s="gain">Gain €</button><button type="button" data-s="liq">Liquidité</button></div></div>
       <div class="grid" style="margin-top:12px">
-        <label>Prix loose min <select id="rMin"><option value="0">Aucun minimum</option><option value="1">1 €</option><option value="2">2 €</option><option value="5">5 €</option><option value="10">10 €</option><option value="20">20 €</option><option value="50">50 €</option><option value="100">100 €</option><option value="200">200 €</option><option value="500">500 €</option></select></label>
-        <label>Prix loose max <select id="rMax"><option value="">Sans limite</option><option value="10">10 €</option><option value="20">20 €</option><option value="50">50 €</option><option value="100">100 €</option><option value="200">200 €</option><option value="500">500 €</option><option value="1000">1000 €</option><option value="2000">2000 €</option></select></label>
+        <label>Prix loose min (€) <input id="rMin" list="rMinList" inputmode="decimal" autocomplete="off" maxlength="9" placeholder="Aucun minimum"><datalist id="rMinList"><option value="1"><option value="2"><option value="5"><option value="10"><option value="20"><option value="50"><option value="100"><option value="200"><option value="500"></datalist></label>
+        <label>Prix loose max (€) <input id="rMax" list="rMaxList" inputmode="decimal" autocomplete="off" maxlength="9" placeholder="Sans limite"><datalist id="rMaxList"><option value="10"><option value="20"><option value="50"><option value="100"><option value="200"><option value="500"><option value="1000"><option value="2000"></datalist></label>
 <label>Rendement min <select id="rRoi"><option value="">Tous</option><option value="0">Rentable (0 % et +)</option><option value="25">25 % et +</option><option value="50">50 % et +</option><option value="100">100 % et +</option><option value="200">200 % et +</option><option value="500">500 % et +</option></select></label>
 <label>Gain net min <select id="rGain"><option value="">Tous</option><option value="0">Positif (0 € et +)</option><option value="10">10 € et +</option><option value="25">25 € et +</option><option value="50">50 € et +</option><option value="100">100 € et +</option><option value="250">250 € et +</option><option value="500">500 € et +</option></select></label>
         <label>Ventes CCC min <select id="rN"><option value="1">1 vente</option><option value="2">2 ventes</option><option value="3">3 ventes</option></select></label>
@@ -2103,22 +2103,28 @@ const pageFromHash = () => location.hash === "#recherche" ? "rech" : location.ha
 window.addEventListener("hashchange", () => { if (state.password) setPage(pageFromHash()); });
 // Les filtres ne s'appliquent qu'au clic sur « Actualiser » (ou Entrée) : on lit alors les valeurs affichées.
 const R_FILTERS = [["rQ", "r_q", ""], ["rShip", "r_ship", "3"], ["rComm", "r_comm", "0"], ["rMin", "r_min", "5"], ["rMax", "r_max", ""], ["rRoi", "r_roi", ""], ["rGain", "r_gain", ""], ["rN", "r_n", "1"], ["rSpeed", "r_speed", "regular"]];
+// Prix loose min/max : champs libres. Min vide = « 0 » (aucun minimum), max vide = sans limite.
+const rVal = id => id === "rMin" ? (cleanMoney(id) || "0") : id === "rMax" ? cleanMoney(id) : String($(id).value);
 function rMarkPending() {
-  const changed = R_FILTERS.some(([id, k, d]) => String($(id).value) !== String(pref.get(k, d)));
+  const changed = R_FILTERS.some(([id, k, d]) => rVal(id) !== String(pref.get(k, d)));
   $("rApply").classList.toggle("pending", changed);
   $("rPending").textContent = changed ? "Filtres modifiés : clique sur « Actualiser » pour les appliquer." : "Choisis tes filtres, puis clique sur « Actualiser » (ou appuie sur Entrée).";
 }
 function rApply() {
-  R_FILTERS.forEach(([id, k]) => pref.set(k, $(id).value));
+  R_FILTERS.forEach(([id, k]) => pref.set(k, rVal(id)));
+  $("rMin").value = pref.get("r_min", "5") === "0" ? "" : pref.get("r_min", "5"); $("rMax").value = pref.get("r_max", "");
   rMarkPending(); renderResearch();
 }
 [["rQ", "r_q", ""], ["rShip", "r_ship", "3"], ["rComm", "r_comm", "0"]].forEach(([id, k, d]) => {
   $(id).value = pref.get(k, d); $(id).addEventListener("input", rMarkPending);
   $(id).addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); rApply(); } }); });
-[["rMin", "r_min", "5"], ["rMax", "r_max", ""], ["rRoi", "r_roi", ""], ["rGain", "r_gain", ""], ["rN", "r_n", "1"], ["rSpeed", "r_speed", "regular"]].forEach(([id, k, d]) => {
+if (pref.get("r_min", "5") === "") pref.set("r_min", "0");
+$("rMin").value = pref.get("r_min", "5") === "0" ? "" : pref.get("r_min", "5"); $("rMax").value = pref.get("r_max", "");
+["rMin", "rMax"].forEach(id => { $(id).addEventListener("input", rMarkPending); $(id).addEventListener("focus", () => $(id).select());
+  $(id).addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); rApply(); } }); });
+[["rRoi", "r_roi", ""], ["rGain", "r_gain", ""], ["rN", "r_n", "1"], ["rSpeed", "r_speed", "regular"]].forEach(([id, k, d]) => {
 const s = $(id), v0 = pref.get(k, d);
-if (id === "rMin" && v0 === "") pref.set(k, "0");
-else if (["rMin", "rMax", "rRoi", "rGain"].includes(id) && v0 !== "" && ![...s.options].some(o => o.value === v0)) s.add(new Option(String(v0).replace(".", ",") + (id === "rRoi" ? " %" : " €"), v0));
+if (["rRoi", "rGain"].includes(id) && v0 !== "" && ![...s.options].some(o => o.value === v0)) s.add(new Option(String(v0).replace(".", ",") + (id === "rRoi" ? " %" : " €"), v0));
   $(id).value = pref.get(k, d); $(id).addEventListener("change", rMarkPending); });
 $("rApply").addEventListener("click", rApply);
 $("rNote").addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) { pref.set("r_note", b.dataset.n); renderResearch(); } });
