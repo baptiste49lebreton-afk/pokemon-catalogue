@@ -33,8 +33,9 @@ PRIX_MIN = 1           # € : en dessous, les variations ne veulent rien dire
 JOURS = 45             # jours d'historique gardés (moyenne 30 jours + marge)
 MIN_JOURS = 10         # historique minimum (en jours) pour calculer les moyennes
 HAUSSE_MIN = 5         # % : seuil le plus bas proposé par le site
-DEMARRAGE_MAX = 800    # fiches Pokoya lues par jour pour démarrer l'historique des nouvelles cartes
-DEMARRAGE_PRIX_MIN = 5  # € : les cartes moins chères construisent leur historique au fil des jours
+DEMARRAGE_MAX = 2500   # fiches Pokoya lues par jour pour démarrer l'historique des nouvelles cartes (avant : 800)
+DEMARRAGE_PRIX_MIN = 1  # € : toutes les cartes suivies démarrent leur historique (avant : 5 €)
+ERREURS_MAX = 10       # arrêt de sécurité : après 10 fiches illisibles d'affilée, on arrête de demander à Pokoya
 
 
 def lire_historique(password):
@@ -108,7 +109,7 @@ def main():
         sys.exit("Pokoya ne répond pas : rien n'est modifié.")
 
     # 2. démarrage de l'historique des nouvelles cartes (les plus chères d'abord)
-    demarre, lues = set(h["demarre"]), 0
+    demarre, lues, erreurs = set(h["demarre"]), 0, 0
     for c in sorted(cartes.values(), key=lambda c: -c["prix"]):
         if lues >= DEMARRAGE_MAX or c["prix"] < DEMARRAGE_PRIX_MIN:
             break
@@ -119,8 +120,13 @@ def main():
             for d, p in pokoya_prices.historique(c["code"], c["numero"]).items():
                 h["prix"][c["k"]].setdefault(d, p)
             demarre.add(c["k"])
+            erreurs = 0
         except Exception as exc:
+            erreurs += 1
             print(f"  historique Pokoya indisponible pour {c['nom']} : {exc}")
+            if erreurs >= ERREURS_MAX:
+                print(f"  {ERREURS_MAX} erreurs d'affilée : arrêt du démarrage de l'historique pour aujourd'hui (reprise demain).")
+                break
     h["demarre"] = sorted(demarre)
     print(f"Démarrage : {lues} fiche(s) Pokoya lue(s), {len(demarre)} cartes démarrées au total.")
 
