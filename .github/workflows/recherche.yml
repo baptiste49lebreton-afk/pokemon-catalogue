@@ -15,7 +15,7 @@ concurrency:
 jobs:
   recherche:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
       - name: Installer la bibliothèque de chiffrement
