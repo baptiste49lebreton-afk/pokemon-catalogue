@@ -1,33 +1,40 @@
 # Catalogue Pokémon
 
-Site statique : une liste de cartes avec visuel, prix du jour et graphique d'évolution.
+Site statique (GitHub Pages) protégé par mot de passe : ta collection avec prix du jour et courbes, une page
+Recherche (acheter en loose, faire grader en CCC) et une page « À surveiller » (cartes dont le prix monte).
 
-## Structure
+## Sources de prix
 
-- `index.html` : le site (aucun serveur ni base de données nécessaires)
-- `scripts/update_prices.py` : récupère les cartes d'un set et leurs prix via l'API pokemontcg.io, puis met à jour `data/cards.json` et `data/history.json`
-- `data/cards.json` : cartes et prix du jour
-- `data/history.json` : historique quotidien des prix (un relevé par jour et par carte)
+- **Prix des cartes** : uniquement des prix français. Cote Cardmarket de la version française en Near Mint,
+  relevée sur [Pokoya](https://pokoya.app) (`scripts/pokoya_prices.py`). Un prix saisi à la main passe avant.
+  Sans prix FR, la carte n'a pas de prix (jamais de prix toutes langues).
+- **Prix CCC** : ventes réussies sur Graded Card Center (`scripts/gcc_prices.py`), sans estimation.
+- **Identification des cartes** (images, extension, lien Cardmarket) : API publique TCGdex.
 
-## Première utilisation
+## Fichiers
 
-1. Trouve l'identifiant de ton set dans https://api.pokemontcg.io/v2/sets (le champ `id`).
-2. Lance la mise à jour :
-   ```
-   python3 scripts/update_prices.py <set-id>
-   ```
-3. Ouvre `index.html`. Pour que le site charge les fichiers JSON, il faut le servir par un petit serveur local, par exemple :
-   ```
-   python3 -m http.server 8000
-   ```
-   puis va sur http://localhost:8000.
+- `index.html` : tout le site (aucun serveur ni base de données).
+- `data/vault.json` : ta collection et son historique, chiffrés (AES-256-GCM, clé dérivée du mot de passe).
+- `data/research.json`, `data/watch.json` : Recherche et cartes à surveiller, chiffrées de la même façon.
+- `data/auth.json`, `data/keyring.json` : connexion (mot de passe modifiable, code de récupération) et comptes invités.
+- `scripts/update_prices.py` : met à jour la collection (workflow « Mise à jour quotidienne », 6 h UTC).
+- `scripts/surveiller.py` puis `scripts/research.py` : À surveiller et Recherche (workflow « Recherche quotidienne »,
+  4 h 15 UTC). L'historique complet des prix FR est gardé chiffré dans le cache GitHub Actions.
 
-## Mise en ligne gratuite
+## Sécurité
 
-Pousse le dossier sur GitHub et active GitHub Pages (Settings → Pages → branche `main`). Pour que les prix se mettent à jour tout seuls, une GitHub Action peut lancer `update_prices.py` chaque jour et committer les JSON.
+- Rien n'est en clair dans le dépôt : tout est chiffré avec le secret GitHub `SITE_PASSWORD`.
+- La clé d'accès GitHub collée dans le site reste dans ton navigateur, chiffrée avec ton mot de passe.
+- Verrouillage automatique après inactivité (Réglages), freinage des essais de mot de passe, site non affichable
+  dans un cadre, politique de sécurité du contenu stricte (aucun script externe).
+- Les actions GitHub et la bibliothèque de chiffrement sont figées à une version précise.
 
-## À savoir
+## Raccourcis
 
-- Le prix utilisé est la cote Cardmarket de la version française en Near Mint, relevée sur Pokoya (`scripts/pokoya_prices.py`). Aucun prix toutes langues : sans prix français sur Pokoya, la carte n'a pas de prix (tu peux le saisir à la main).
-- Les quotas et les champs de l'API peuvent changer : vérifie sur pokemontcg.io.
-- L'historique se remplit à partir du premier lancement ; il n'y a pas de données passées.
+Touche `?` sur le site pour la liste : `1` `2` `3` pour changer de page, `a` ajouter, `/` chercher,
+`e` évolution, `g` grille/liste, `m` cacher les montants, `l` verrouiller, `Échap` fermer.
+Adresses directes à mettre en favori : `#recherche`, `#surveiller`, `#ajouter`, `#evolution`.
+
+## Lancer à la main
+
+Onglet **Actions** du dépôt → « Mise à jour quotidienne » ou « Recherche quotidienne » → **Run workflow**.

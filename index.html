@@ -217,6 +217,9 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
   .wrap.list .mpen { display:inline-block; padding:2px 8px; margin-left:2px; }
   .wrap.rlist td:last-child { position:static; }
 }
+.keys { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:6px 18px; }
+.keyrow { display:flex; align-items:center; gap:10px; }
+kbd { display:inline-block; min-width:1.6em; padding:2px 7px; border:1px solid var(--line); border-bottom-width:2px; border-radius:6px; font:600 .85rem/1.3 ui-monospace, monospace; text-align:center; background:var(--field); }
 [hidden] { display:none !important; }
 </style>
 </head>
@@ -260,13 +263,20 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
       <button type="button" id="wallPick">Choisir une image…</button><button type="button" class="ghost" id="wallClear">Retirer</button>
       <input type="file" id="wallFile" accept="image/*" hidden></div>
     <div class="setrow" id="veilRow"><span class="label">Voile</span><input type="range" id="veil" min="0" max="90" value="55" aria-label="Intensité du voile sur l'image"><span class="meta">pour que le texte reste lisible</span></div>
+    <div class="setrow"><span class="label">Verrouillage</span><select id="lockSel" aria-label="Verrouillage automatique après inactivité"><option value="15">après 15 min sans activité</option><option value="30">après 30 min sans activité</option><option value="60">après 1 h sans activité</option><option value="240">après 4 h sans activité</option><option value="0">jamais</option></select><span class="meta">il faudra retaper le mot de passe</span></div>
     <div class="setrow"><span class="label">Cadre des cartes</span><input type="range" id="frame" min="0" max="100" value="100" aria-label="Opacité du cadre derrière chaque carte"><span class="meta" id="frameVal">100 %</span></div>
     <div class="setrow"><span class="label">Boutons</span><input type="color" id="cAccent" aria-label="Couleur des boutons"><button type="button" class="ghost" data-reset="cAccent">Par défaut</button><span class="meta">Ajouter, Grille/Liste, courbe…</span></div>
     <div class="setrow"><span class="label">Chiffre « valeur »</span><input type="color" id="cVal" aria-label="Couleur du chiffre de la valeur de la collection"><button type="button" class="ghost" data-reset="cVal">Par défaut</button></div>
     <div class="setrow"><span class="label">Texte</span><input type="color" id="cText" aria-label="Couleur du texte (noms et prix)"><button type="button" class="ghost" data-reset="cText">Par défaut</button><span class="meta">noms des cartes, prix, titres</span></div>
     <p class="help">L'image reste uniquement dans ce navigateur : elle n'est ni envoyée, ni enregistrée sur GitHub. Il faut la choisir de nouveau sur chaque appareil. Le thème, les couleurs et l'affichage (grille/liste, montants cachés) sont aussi retenus ici.</p>
-    <div class="row"><button type="button" class="ghost ownonly" id="setToken">Clé d'accès GitHub…</button><button type="button" class="ghost ownonly" id="acctOpen">Comptes invités…</button><button type="button" class="ghost ownonly" id="secOpen">Sécurité…</button><button type="button" class="ghost" id="logout">Se déconnecter</button></div>
+    <div class="row"><button type="button" class="ghost" id="keysOpen">Raccourcis clavier (?)</button><button type="button" class="ghost ownonly" id="setToken">Clé d'accès GitHub…</button><button type="button" class="ghost ownonly" id="acctOpen">Comptes invités…</button><button type="button" class="ghost ownonly" id="secOpen">Sécurité…</button><button type="button" class="ghost" id="logout">Se déconnecter</button></div>
     <p class="err" id="setErr" role="alert"></p>
+  </section>
+
+  <section class="panel" id="keysPanel" hidden aria-label="Raccourcis clavier">
+    <div class="charthead"><h2>Raccourcis clavier</h2><button type="button" class="ghost" id="keysClose">Fermer</button></div>
+    <div id="keysList" class="keys"></div>
+    <p class="help">Les raccourcis ne marchent pas pendant que tu écris dans un champ (Échap pour en sortir). Adresses directes à mettre en favori : <code>#recherche</code>, <code>#surveiller</code>, <code>#ajouter</code>, <code>#evolution</code> à la fin de l'adresse du site.</p>
   </section>
 
   <form class="panel colonly" id="addPanel" hidden autocomplete="off">
@@ -332,7 +342,7 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
 
   <form class="panel" id="tokenPanel" hidden autocomplete="off">
     <h2>Accès pour ajouter depuis le site</h2>
-    <p class="help" style="margin-top:0">Colle ici la clé d'accès GitHub (jeton) de ce dépôt. Elle reste uniquement dans ce navigateur et ne peut pas modifier le code du site.</p>
+    <p class="help" style="margin-top:0">Colle ici la clé d'accès GitHub (jeton) de ce dépôt. Elle reste uniquement dans ce navigateur, chiffrée avec ton mot de passe, et ne peut pas modifier le code du site.</p>
     <div class="row" style="margin-top:10px">
       <input type="password" id="tokenIn" placeholder="github_pat_…" style="flex:1; min-width:200px" autocomplete="off">
       <button type="submit">Enregistrer</button>
@@ -507,9 +517,26 @@ async function encryptJSON(obj, password) {
   return { v: 1, iter: 600000, salt: toB64(salt), iv: toB64(iv), data: toB64(new Uint8Array(ct)) };
 }
 
-// ---------- jeton d'accès (stocké dans ce navigateur seulement) ----------
-const getToken = () => { try { return localStorage.getItem("gh") || ""; } catch (e) { return ""; } };
-const setToken = t => { try { t ? localStorage.setItem("gh", t) : localStorage.removeItem("gh"); } catch (e) {} };
+// ---------- jeton d'accès (stocké dans ce navigateur seulement, chiffré avec la clé du coffre) ----------
+// En clair, il ne vit qu'en mémoire après le déverrouillage : quelqu'un qui lit le navigateur sans le mot de passe n'en tire rien.
+let ghToken = "";
+const getToken = () => ghToken;
+async function setToken(t) {
+  ghToken = t || "";
+  try {
+    if (!t) localStorage.removeItem("gh");
+    else if (state.password) localStorage.setItem("gh", JSON.stringify(await encryptJSON({ t }, state.password)));
+  } catch (e) {}
+}
+async function loadToken() {   // après le déverrouillage (propriétaire seulement)
+  ghToken = "";
+  let raw = null; try { raw = localStorage.getItem("gh"); } catch (e) {}
+  if (!raw || !state.password) return;
+  if (!raw.startsWith("{")) { await setToken(raw); return; }   // ancien jeton en clair : chiffré maintenant
+  try { const blob = JSON.parse(raw), key = await deriveKey(state.password, fromB64(blob.salt), blob.iter, "decrypt");
+    ghToken = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(blob.iv) }, key, fromB64(blob.data)))).t || "";
+  } catch (e) { ghToken = ""; }
+}
 
 // ---------- lecture / envoi ----------
 async function loadVault(file) {
@@ -1297,9 +1324,10 @@ function setPage(p) {
 }
 async function loadResearch() {
   $("rInfo").textContent = "Chargement de la recherche…";
-  try { research = await loadVault("research.json"); researchErr = ""; await mergeFrPrices();
-    try { watch = await loadVault("watch.json"); } catch (e) { watch = null; } }
-  catch (e) { researchErr = e.message === "absent" ? "La première recherche sera prête après le relevé automatique de demain matin." : "Recherche indisponible pour le moment."; }
+  const [r, w] = await Promise.allSettled([loadVault("research.json"), loadVault("watch.json")]);
+  watch = w.status === "fulfilled" ? w.value : null;
+  if (r.status === "fulfilled") { research = r.value; researchErr = ""; await mergeFrPrices(); }
+  else researchErr = r.reason.message === "absent" ? "La première recherche sera prête après le relevé automatique de demain matin." : "Recherche indisponible pour le moment.";
   renderResearch();
 }
 // Cartes de 2018 et après seulement. Prix loose : français Near Mint relevé sur Pokoya (c.fr), jamais toutes langues.
@@ -1414,6 +1442,22 @@ function cccLine(c) {
   const parts = ["10", "9.5", "9"].filter(n => c.ccc && c.ccc[n]).map(n => "CCC " + n + " ≈ " + fmt(c.ccc[n].prix));
   return parts.length ? parts.join(" · ") : "Pas de vente CCC relevée";
 }
+// Pré-remplit l'ajout d'une carte (page Collection) : nom, extension (code TCGdex = code Pokoya) et numéro.
+function addFrom(nom, sid, set, numero) {
+  if (state.guestKey) return;
+  numero = String(numero || "").replace(/^0+(?=\d)/, "");
+  goPage("col");
+  $("addPanel").reset(); $("results").replaceChildren();
+  $("fNom").value = nom || ""; $("fSet").value = set || sid || ""; $("fNum").value = numero;
+  picked = sid ? { sid, set: $("fSet").value, numero } : null;
+  $("heard").textContent = "Carte pré-remplie : indique le prix payé si tu veux, puis clique sur « Enregistrer ».";
+  openAdd(); $("fPaye").focus();
+}
+function addBtn(nom, sid, set, numero) {
+  const b = el("button", "ghost ownonly", "＋ Ajouter à ma collection"); b.type = "button";
+  b.addEventListener("click", ev => { ev.stopPropagation(); addFrom(nom, sid, set, numero); });
+  return b;
+}
 function buyBar(c) {   // « Acheter sur… » : même recherche et mêmes filtres que sur la fiche d'une carte
   const bar = el("div", "setrow"), sel = el("select");
   bar.style.cssText = "flex:1 1 100%; align-items:center; gap:10px; flex-wrap:wrap";
@@ -1462,7 +1506,9 @@ function liqBlock(c, r) {   // petit encart « Liquidité » : même calcul qu'e
 function watchDetail(c) {
   const box = el("div"); box.style.cssText = "display:flex; flex-wrap:wrap; gap:8px 28px; padding:4px 2px 10px";
   const ref = c.avg30, r = researchByKey.get(c.k) || {};
-  box.append(buyBar(researchByKey.get(c.k) || c));
+  const bb = buyBar(researchByKey.get(c.k) || c), code = String(c.k || "").split(":")[1];
+  if (code) bb.append(addBtn(c.nom, code, c.set, c.numero));
+  box.append(bb);
   box.append(priceChart("Évolution jour par jour (français Near Mint, Pokoya)", c.j || [], c.avg30));
   box.append(miniTable("Résumé", ["", "Prix", "vs moy. 30 j"], [
     ["Moyenne 30 jours", fmt(c.avg30), ""], ["Moyenne 7 jours", fmt(c.avg7), variation(c.avg7, ref)],
@@ -1517,8 +1563,8 @@ function renderWatch() {
       const { c } = r, rc = researchByKey.get(c.k), tr = el("tr"), [imgCell, info] = watchCell(c, i + 1, cccLine(rc || {}));
       const a = (v, lab) => { const td = el("td", "r"); td.append(el("div", "money", fmt(v))); td.dataset.label = lab; return td; };
       const pct = el("td", "r big up"); pct.append(el("span", "pill up", signedPct(r.pct))); pct.dataset.label = "Hausse";
-      const cm = el("td", "r"), link = el("a", "meta", "Pokoya ↗"), links = [link];
-      link.href = "https://pokoya.app/carte/" + c.slug;
+      const cm = el("td", "r"), links = [];
+      if (/^[a-z0-9-]+\/[a-z0-9-]+$/.test(c.slug || "")) { const link = el("a", "meta", "Pokoya ↗"); link.href = "https://pokoya.app/carte/" + c.slug; links.push(link); }
       if (rc) { const fiche = el("a", "meta", "Fiche ↗"); fiche.href = location.pathname + "?carte=" + encodeURIComponent(cardKey(rc)) + "#fiche"; links.push(fiche); }
       links.forEach(x => { x.target = "_blank"; x.rel = "noopener noreferrer"; x.style.cssText = "display:block; color:var(--muted); text-decoration:underline"; cm.append(x); });
       const li = liqInfo(c, rc || {}), lq = el("td", "r"); lq.dataset.label = "Liquidité";
@@ -1611,6 +1657,7 @@ function drawFiche(c) {
   const body = el("div", "fbody");
   body.append(el("div", "name", c.nom), el("div", "meta", [c.set, c.numero, c.annee].filter(Boolean).join(" · ")));
   body.append(el("div", "label", "Prix loose (Cardmarket, français near mint, relevé sur Pokoya)"), el("div", "fprice", fmt(c.loose)));
+  if (c.fr && c.fr.code) { const ab = addBtn(c.nom, c.fr.code, c.set, c.numero); ab.style.marginTop = "6px"; body.append(ab); }
   if (c.cm_id) {
     const a = el("a", "meta", "Voir sur Cardmarket ↗"); a.href = cmLink(c); a.target = "_blank"; a.rel = "noopener noreferrer";
     a.style.cssText = "display:inline-block; margin-top:2px; color:var(--muted); text-decoration:underline"; body.append(a);
@@ -1933,12 +1980,23 @@ function openToken() {
   $("tokenIn").focus();
 }
 
+// ---------- verrouillage automatique après inactivité ----------
+const LOCK_MIN = () => { const v = Number(pref.get("lock", "30")); return [0, 15, 30, 60, 240].includes(v) ? v : 30; };
+let lastActive = Date.now();
+["pointerdown", "keydown", "scroll", "touchstart"].forEach(t => addEventListener(t, () => { lastActive = Date.now(); }, { passive: true, capture: true }));
+function lockNow() { try { sessionStorage.removeItem("k"); } catch (e) {} location.reload(); }
+setInterval(() => {
+  const m = LOCK_MIN();
+  if (m && !$("app").hidden && !state.busy && Date.now() - lastActive > m * 60000) lockNow();
+}, 30000);
+
 // ---------- démarrage ----------
 async function unlock(password, user, direct) {
   state.guestKey = null;
   if (!direct && user && await guestUnlock(user, password)) state.password = null;
   else state.password = direct ? password : await masterFrom(password);
   const guest = !!state.guestKey;
+  if (!guest) await loadToken();
   document.body.classList.toggle("guest", guest);
   $("guestBadge").hidden = !guest;
   const v = await loadVault();
@@ -1946,7 +2004,7 @@ async function unlock(password, user, direct) {
   draw(v.cards.updated);
   $("login").hidden = true; $("app").hidden = false;
 if (FICHE_KEY) { setPage("fiche"); return; }
-  setPage(pageFromHash());
+  openFromHash();
 }
 
 let failures = 0;
@@ -1979,7 +2037,7 @@ $("login").addEventListener("submit", async ev => {
   }
 });
 
-$("btnAdd").addEventListener("click", () => { $("addPanel").hidden = !$("addPanel").hidden; if (!$("addPanel").hidden) $("fNom").focus(); });
+$("btnAdd").addEventListener("click", () => { if ($("addPanel").hidden) openAdd(); else $("addPanel").hidden = true; });
 $("fCancel").addEventListener("click", () => { $("addPanel").hidden = true; });
 $("addPanel").addEventListener("submit", addItem);
 $("fSearch").addEventListener("click", () => searchCard(true));
@@ -1994,11 +2052,11 @@ $("btnChart").addEventListener("click", () => { if ($("chartPanel").hidden) open
 $("chartClose").addEventListener("click", closeChart);
 $("editForm").addEventListener("submit", saveEdit);
 $("tokenClose").addEventListener("click", () => { $("tokenPanel").hidden = true; });
-$("tokenClear").addEventListener("click", () => { setToken(""); $("tokenState").textContent = "Jeton effacé de ce navigateur."; });
-$("tokenPanel").addEventListener("submit", ev => {
+$("tokenClear").addEventListener("click", async () => { await setToken(""); $("tokenState").textContent = "Jeton effacé de ce navigateur."; });
+$("tokenPanel").addEventListener("submit", async ev => {
   ev.preventDefault();
   const t = $("tokenIn").value.trim();
-  if (t) { setToken(t); $("tokenIn").value = ""; $("tokenState").textContent = "Jeton enregistré dans ce navigateur."; }
+  if (t) { $("tokenIn").value = ""; await setToken(t); $("tokenState").textContent = "Jeton enregistré (chiffré) dans ce navigateur."; }
 });
 // ---------- réglages : thème, fond d'écran, montants cachés, affichage ----------
 function applyTheme(t) {
@@ -2078,7 +2136,9 @@ $("forgot").addEventListener("click", () => setRecover(!recoverMode));
 $("acctClose").addEventListener("click", () => { $("acctPanel").hidden = true; });
 $("acctPanel").addEventListener("submit", addAccount);
 $("aGen").addEventListener("click", () => { $("aPw").value = genPassword(); });
-$("logout").addEventListener("click", () => { try { sessionStorage.removeItem("k"); } catch (e) {} location.reload(); });
+$("logout").addEventListener("click", lockNow);
+$("lockSel").value = String(LOCK_MIN());
+$("lockSel").addEventListener("change", () => { pref.set("lock", $("lockSel").value); lastActive = Date.now(); });
 $("themeSeg").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; pref.set("theme", b.dataset.t); applyTheme(b.dataset.t); });
 $("wallPick").addEventListener("click", () => $("wallFile").click());
 $("wallFile").addEventListener("change", async () => { const f = $("wallFile").files[0]; $("wallFile").value = ""; if (f) await chooseWall(f); });
@@ -2097,10 +2157,53 @@ document.querySelectorAll("[data-reset]").forEach(b => b.addEventListener("click
 $("veil").addEventListener("input", () => { applyVeil(Number($("veil").value)); pref.set("veil", $("veil").value); });
 $("viewSeg").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; view = b.dataset.v === "list" ? "list" : "grid"; pref.set("view", view); hideZoom(); draw(); });
 $("ranges").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; chartRange = b.dataset.r; renderChart(); });
-$("tabs").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return;
-  history.replaceState(null, "", b.dataset.p === "rech" ? "#recherche" : b.dataset.p === "watch" ? "#surveiller" : location.pathname + location.search); setPage(b.dataset.p); });
+// Adresses directes : #collection, #recherche, #surveiller, #ajouter (ouvre l'ajout d'une carte), #evolution.
+function goPage(p) {
+  history.replaceState(null, "", p === "rech" ? "#recherche" : p === "watch" ? "#surveiller" : location.pathname);
+  setPage(p);
+}
+$("tabs").addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) goPage(b.dataset.p); });
 const pageFromHash = () => location.hash === "#recherche" ? "rech" : location.hash === "#surveiller" ? "watch" : "col";
-window.addEventListener("hashchange", () => { if (state.password) setPage(pageFromHash()); });
+function openFromHash() {
+  setPage(pageFromHash());
+  if (location.hash === "#ajouter" && !state.guestKey) openAdd();
+  if (location.hash === "#evolution" && $("chartPanel").hidden) openChart("all", true);
+}
+window.addEventListener("hashchange", () => { if (state.vault) openFromHash(); });
+function openAdd() { $("addPanel").hidden = false; $("addPanel").scrollIntoView({ block: "nearest" }); $("fNom").focus(); }
+
+// Raccourcis clavier (hors champs de saisie). « ? » affiche la liste.
+const KEYS = [["1", "Ma collection"], ["2", "Recherche"], ["3", "À surveiller"], ["a", "Ajouter une carte"],
+  ["/", "Chercher (carte à ajouter, ou fiche dans la Recherche)"], ["e", "Évolution de la valeur"], ["g", "Grille ou liste"],
+  ["m", "Cacher ou afficher les montants"], ["r", "Réglages"], ["l", "Verrouiller (se déconnecter)"], ["Échap", "Fermer le panneau ouvert"], ["?", "Liste des raccourcis"]];
+function toggleKeys(show) {
+  const box = $("keysPanel"); box.hidden = show == null ? !box.hidden : !show;
+  if (!box.hidden && !$("keysList").childElementCount)
+    $("keysList").replaceChildren(...KEYS.map(([k, t]) => { const r = el("div", "keyrow"); r.append(el("kbd", "", k), el("span", "", t)); return r; }));
+}
+function closeTop() {   // ferme le panneau le plus « au-dessus »
+  for (const id of ["keysPanel", "tokenPanel", "secPanel", "acctPanel", "setPanel", "addPanel"]) if (!$(id).hidden) { $(id).hidden = true; if (id === "secPanel") { secPending = null; $("secCode").textContent = ""; } return true; }
+  if (!$("chartPanel").hidden) { closeChart(); return true; }
+  return false;
+}
+document.addEventListener("keydown", ev => {
+  if ($("app").hidden || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  const typing = ev.target.closest && ev.target.closest("input, textarea, select, [contenteditable]");
+  if (ev.key === "Escape") { if (closeTop() || typing) { if (typing) ev.target.blur(); ev.preventDefault(); } return; }
+  if (typing || ev.repeat) return;
+  const guest = !!state.guestKey, k = ev.key.toLowerCase();
+  const act = {
+    "1": () => goPage("col"), "&": () => goPage("col"), "2": () => goPage("rech"), "é": () => goPage("rech"), "3": () => goPage("watch"), "\"": () => goPage("watch"),
+    "a": () => { if (guest) return; if (page !== "col") goPage("col"); openAdd(); },
+    "/": () => { if (page === "rech") { $("cQ").focus(); $("cQ").select(); } else if (!guest) { if (page !== "col") goPage("col"); openAdd(); } },
+    "e": () => { if (page !== "col") goPage("col"); if ($("chartPanel").hidden) openChart("all", true); else closeChart(); },
+    "g": () => { if (page === "col") $("viewSeg").querySelector(view === "grid" ? '[data-v="list"]' : '[data-v="grid"]').click(); },
+    "m": () => $("btnEye").click(), "r": () => $("btnSet").click(), "l": lockNow, "?": () => toggleKeys(), ",": () => toggleKeys(),
+  }[k];
+  if (act) { ev.preventDefault(); act(); }
+});
+$("keysOpen").addEventListener("click", () => toggleKeys(true));
+$("keysClose").addEventListener("click", () => toggleKeys(false));
 // Les filtres ne s'appliquent qu'au clic sur « Actualiser » (ou Entrée) : on lit alors les valeurs affichées.
 const R_FILTERS = [["rQ", "r_q", ""], ["rShip", "r_ship", "3"], ["rComm", "r_comm", "0"], ["rMin", "r_min", "5"], ["rMax", "r_max", ""], ["rRoi", "r_roi", ""], ["rGain", "r_gain", ""], ["rN", "r_n", "1"], ["rSpeed", "r_speed", "regular"]];
 // Prix loose min/max : champs libres. Min vide = « 0 » (aucun minimum), max vide = sans limite.

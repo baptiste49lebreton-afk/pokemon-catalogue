@@ -17,11 +17,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 330
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0, version figée
       - name: Installer la bibliothèque de chiffrement
-        run: pip install --quiet cryptography
+        run: pip install --quiet "cryptography==46.0.7"  # version figée
       - name: Reprendre l'historique des prix FR (cache, chiffré)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0, version figée
         with:
           path: cache/historique_fr.json
           key: historique-fr-${{ github.run_id }}
@@ -32,7 +32,7 @@ jobs:
         run: python3 scripts/surveiller.py
       - name: Garder l'historique des prix FR (cache, chiffré)
         if: always() && hashFiles('cache/historique_fr.json') != ''
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0, version figée
         with:
           path: cache/historique_fr.json
           key: historique-fr-${{ github.run_id }}
