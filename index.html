@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow, noarchive, noimageindex">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src https://assets.tcgdex.net https://images.pokemontcg.io data:; connect-src 'self' https://api.github.com https://api.tcgdex.net; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src https://assets.tcgdex.net https://images.pokemontcg.io data:; connect-src 'self' https://api.github.com https://api.tcgdex.net; base-uri 'none'; form-action 'none'; upgrade-insecure-requests; require-trusted-types-for 'script'; trusted-types 'none'">
 <title>Collection</title>
 <style>
 :root { --bg:#f4f3ef; --fg:#16181d; --muted:#6c717c; --line:#d9d7d0; --accent:#b88700; --up:#1f7a4d; --down:#b3261e; --field:#fff; --panel:#ebe9e2; color-scheme: light; }
@@ -29,7 +29,7 @@ td.r { white-space:nowrap; }
 td.img img { width:56px; height:auto; border-radius:4px; display:block; }
 .name { font-weight:600; }
 #zoom { position:fixed; z-index:50; width:270px; height:auto; border-radius:12px; box-shadow:0 12px 34px rgba(0,0,0,.5); pointer-events:none; display:none; background:var(--panel); }
-td.img img { cursor:zoom-in; }
+img[data-zoom] { cursor:zoom-in; }
 .editform { margin:2px 0 14px; padding-bottom:14px; border-bottom:1px solid var(--line); }
 .editform .row { align-items:center; margin-top:10px; }
 .editform .grid { grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); }
@@ -45,7 +45,6 @@ button.ghost { background:transparent; color:var(--fg); border:1px solid var(--l
 .mini th { color:var(--muted); font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; }
 .mini .r { text-align:right; padding-right:0; padding-left:12px; }
 .wdetail td { grid-column:1 / -1; }
-button#rApply.pending { outline:3px solid var(--accent); outline-offset:2px; }
 button.x { background:transparent; color:var(--muted); padding:4px 8px; border:0; font-size:1.1rem; }
 button:disabled { opacity:.6; cursor:wait; }
 .err { color:var(--down); min-height:1.4em; margin:0; }
@@ -181,6 +180,49 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
 .fiche .fprice { font:700 1.4rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif; font-variant-numeric:tabular-nums; margin-top:8px; }
 .pill.liq-a { color:var(--up); } .pill.liq-b { color:var(--accent); } .pill.liq-c { color:var(--muted); } .pill.liq-d { color:var(--down); }
 .rlist .liqmeta { white-space:nowrap; }
+/* ---- images des cartes : place réservée avant le chargement (pas de saut de page), squelette animé en attendant ---- */
+.cimg { aspect-ratio:245/337; object-fit:cover; }
+.sk, .cimg.ph { background:linear-gradient(100deg, var(--line) 35%, color-mix(in srgb, var(--line) 45%, var(--bg)) 50%, var(--line) 65%) 0 0 / 220% 100%; animation:shim 1.3s linear infinite; }
+@keyframes shim { to { background-position:-220% 0; } }
+@media (prefers-reduced-motion: reduce) { .sk, .cimg.ph { animation:none; } }
+.cimg.noimg { background:var(--line); opacity:.55; }
+.skrow { display:flex; gap:12px; align-items:center; padding:10px 6px; border-top:1px solid var(--line); }
+.skimg { width:52px; aspect-ratio:245/337; border-radius:4px; flex:none; }
+.skbody { flex:1; }
+.skline { height:12px; border-radius:6px; margin:7px 0; width:70%; }
+.skline.short { width:40%; }
+tr.more, tr.more > td { display:block !important; height:1px; padding:0 !important; border:0 !important; position:static !important; }
+.gzoom { position:absolute; right:6px; bottom:6px; background:rgba(0,0,0,.6); color:#fff; border-radius:999px; padding:6px; line-height:0; opacity:0; transition:opacity .15s; }
+.gzoom svg { width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.gcard:hover .gzoom, .gzoom:focus-visible { opacity:1; }
+@media (hover: none) { .gzoom { opacity:1; } }
+.cimg.noimg + .gzoom { display:none; }
+/* ---- tableau de bord : top opportunités ---- */
+#dashBody { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap:16px 26px; }
+.dash .charthead h2 { font-size:1.1rem; }
+.dashhead { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.dashhead h3 { margin:0; font:700 .95rem system-ui, sans-serif; }
+.dashhead button, #dashToggle { padding:4px 11px; font-size:.82rem; }
+.dashcol > .meta { margin:4px 0 6px; font-size:.78rem; }
+.opp { display:flex; gap:12px; align-items:flex-start; padding:10px 6px; border-top:1px solid var(--line); border-radius:8px; cursor:pointer; outline-offset:2px; }
+.opp:hover, .opp:focus-visible { background:color-mix(in srgb, var(--fg) 6%, transparent); }
+.opp .cimg { width:54px; flex:none; border-radius:4px; display:block; }
+.oppbody { flex:1; min-width:0; }
+.oppstats { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:2px 10px; margin-top:6px; font-variant-numeric:tabular-nums; }
+.oppstats .label { display:block; font-size:.66rem; }
+.oppstats strong { font-size:.95rem; white-space:nowrap; }
+.oppstats .pill { font-size:.76rem; padding:1px 8px; }
+/* ---- aperçu d'une carte en grand ---- */
+#lb { border:0; padding:0; margin:0; background:transparent; width:100vw; height:100vh; height:100dvh; max-width:none; max-height:none; overflow:hidden; color:#fff; }
+#lb[open] { display:flex; align-items:center; justify-content:center; }
+#lb::backdrop { background:rgba(8,9,12,.88); }
+#lb figure { margin:0; display:flex; flex-direction:column; align-items:center; gap:12px; }
+#lbImg { width:min(92vw, 78vh * 245 / 337, 600px); height:auto; aspect-ratio:245/337; object-fit:contain; border-radius:16px; box-shadow:0 20px 60px rgba(0,0,0,.6); touch-action:pan-y; -webkit-user-drag:none; user-select:none; }
+#lbCap { font-size:.9rem; text-align:center; padding:0 16px; color:#e9ebef; }
+#lb button { position:absolute; background:rgba(255,255,255,.16); color:#fff; border-radius:999px; width:44px; height:44px; padding:0; font-size:1.4rem; line-height:1; }
+#lbClose { top:max(12px, env(safe-area-inset-top, 0px)); right:12px; }
+#lbPrev { left:8px; top:calc(50% - 22px); }
+#lbNext { right:8px; top:calc(50% - 22px); }
 /* ---- téléphone : l'ordinateur n'est pas concerné ---- */
 @media (max-width: 640px) {
   body { padding-top:16px; }
@@ -216,6 +258,9 @@ body.guest #editForm, body.guest thead button.ic { display:none !important; }
   .wrap.list .cap, .wrap.list .cmlink { display:none !important; }
   .wrap.list .mpen { display:inline-block; padding:2px 8px; margin-left:2px; }
   .wrap.rlist td:last-child { position:static; }
+  .oppstats { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  .oppstats > div:last-child { grid-column:1 / -1; }
+  .oppstats > div:last-child .label { display:inline; margin-right:6px; }
 }
 .keys { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:6px 18px; }
 .keyrow { display:flex; align-items:center; gap:10px; }
@@ -246,6 +291,21 @@ kbd { display:inline-block; min-width:1.6em; padding:2px 7px; border:1px solid v
     <nav class="seg tabs" id="tabs" aria-label="Pages"><button type="button" data-p="col">Ma collection</button><button type="button" data-p="rech">🔍 Recherche</button><button type="button" data-p="watch">📈 À surveiller</button></nav>
     <div class="tiles colonly" id="totals"></div>
     <p class="updated colonly" id="updated"></p>
+    <section class="panel dash colonly" id="dash" aria-label="Top opportunités">
+      <div class="charthead"><h2>Top opportunités</h2><button type="button" class="ghost" id="dashToggle" aria-expanded="true" aria-controls="dashBody">Masquer</button></div>
+      <div id="dashBody">
+        <div class="dashcol">
+          <div class="dashhead"><h3>Achat &amp; gradation</h3><button type="button" class="ghost" id="dashRech">Tout voir →</button></div>
+          <p class="meta" id="dashArbInfo"></p>
+          <div id="dashArb"></div>
+        </div>
+        <div class="dashcol">
+          <div class="dashhead"><h3>Top hausses du marché</h3><button type="button" class="ghost" id="dashWatch">Tout voir →</button></div>
+          <p class="meta" id="dashUpInfo"></p>
+          <div id="dashUp"></div>
+        </div>
+      </div>
+    </section>
     <div class="bar colonly">
       <button type="button" id="btnAdd">+ Ajouter</button>
       <button type="button" class="ghost" id="btnChart">📈 Évolution</button>
@@ -370,7 +430,7 @@ kbd { display:inline-block; min-width:1.6em; padding:2px 7px; border:1px solid v
       <div class="seg" id="ranges" role="group" aria-label="Période"><button type="button" data-r="30">30 j</button><button type="button" data-r="90">3 mois</button><button type="button" data-r="365">1 an</button><button type="button" data-r="all">Tout</button></div>
     </div>
     <div class="chartwrap">
-      <img id="chartImg" alt="" hidden>
+      <img id="chartImg" class="cimg" alt="" hidden>
       <div class="plot" id="plot"></div>
     </div>
     <div class="legend" id="chartLegend"></div>
@@ -419,10 +479,6 @@ kbd { display:inline-block; min-width:1.6em; padding:2px 7px; border:1px solid v
         <label>Ventes CCC min <select id="rN"><option value="1">1 vente</option><option value="2">2 ventes</option><option value="3">3 ventes</option></select></label>
         <label>Nom ou extension <input id="rQ" maxlength="60" placeholder="ex. Dracaufeu"></label>
       </div>
-      <div class="setrow" style="margin-top:12px; align-items:center; gap:10px; flex-wrap:wrap">
-        <button type="button" id="rApply">Actualiser</button>
-        <span class="meta" id="rPending" aria-live="polite">Choisis tes filtres, puis clique sur « Actualiser » (ou appuie sur Entrée).</span>
-      </div>
       <details class="tv"><summary>Frais pris en compte (modifiables)</summary>
         <div class="grid" style="margin-top:8px">
           <label>Envoi + assurance Poste, par carte (€) <input id="rShip" inputmode="decimal"></label>
@@ -449,10 +505,7 @@ kbd { display:inline-block; min-width:1.6em; padding:2px 7px; border:1px solid v
         <label>À partir de l'année <select id="wYear"><option value="0">Toutes les années</option><option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option><option value="2023">2023</option><option value="2022">2022</option><option value="2021">2021</option><option value="2020">2020</option><option value="2019">2019</option><option value="2018">2018</option><option value="2017">2017</option><option value="2016">2016</option><option value="2015">2015</option><option value="2014">2014</option><option value="2013">2013</option><option value="2012">2012</option><option value="2011">2011</option><option value="2010">2010</option><option value="2009">2009</option><option value="2008">2008</option><option value="2007">2007</option><option value="2006">2006</option><option value="2005">2005</option><option value="2004">2004</option><option value="2003">2003</option><option value="2002">2002</option><option value="2001">2001</option><option value="2000">2000</option><option value="1999">1999</option></select></label>
         <label>Classer par <select id="wSort"><option value="pct">Plus forte évolution (%)</option><option value="gain">Plus forte hausse en €</option><option value="prix_desc">Prix le plus haut</option><option value="prix_asc">Prix le plus bas</option></select></label>
       </div>
-      <div class="setrow" style="margin-top:12px; align-items:center; gap:10px; flex-wrap:wrap">
-        <button type="button" id="wApply">Actualiser</button>
-        <span class="meta" id="wInfo" aria-live="polite"></span>
-      </div>
+      <p class="meta" id="wInfo" aria-live="polite" style="margin:12px 0 0"></p>
     </div>
     <h3 style="margin:18px 0 6px">Toutes les cartes Pokoya en hausse</h3>
     <div class="wrap list rlist" id="wList"></div>
@@ -461,8 +514,14 @@ kbd { display:inline-block; min-width:1.6em; padding:2px 7px; border:1px solid v
   </section>
   <section id="fichePage" hidden></section>
 <img id="zoom" alt="">
+  <dialog id="lb" aria-label="Carte en grand">
+    <button type="button" id="lbClose" aria-label="Fermer l'aperçu" title="Fermer (Échap)">✕</button>
+    <button type="button" id="lbPrev" aria-label="Carte précédente">‹</button>
+    <figure><img id="lbImg" class="cimg" alt="" referrerpolicy="no-referrer"><figcaption id="lbCap"></figcaption></figure>
+    <button type="button" id="lbNext" aria-label="Carte suivante">›</button>
+  </dialog>
 </main>
 
-<script src="app.js?v=1"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>

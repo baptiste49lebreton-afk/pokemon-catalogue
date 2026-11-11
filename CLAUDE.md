@@ -12,3 +12,14 @@
 - À surveiller : toutes les cartes Pokoya à 1 € ou plus (scripts/surveiller.py) ; historique dans le
   cache GitHub Actions (chiffré), le site ne reçoit que les cartes en hausse (data/watch.json).
 - Le site, les messages et les commits sont en français.
+- Code du site : `index.html` (page et styles) et `app.js` (tout le JavaScript). La politique de sécurité de la
+  page interdit tout script écrit dans `index.html`, tout script venu d'ailleurs et toute insertion de HTML en
+  texte (`innerHTML`…) : le code va dans `app.js` et construit la page avec `el()` / `sv()` / `icon()`.
+  À chaque modification de `app.js`, augmenter le numéro dans `<script src="app.js?v=N">` (sinon un navigateur peut
+  garder l'ancienne version quelques minutes).
+- Images des cartes : toujours `cardImg()` (chargement différé, place réservée, repli si l'image manque). Longues
+  listes : `paged()` (affichage par paquets). Hébergeurs d'images autorisés : `IMG_HOSTS` dans `app.js` et
+  `img-src` dans `index.html`, à garder identiques.
+- Tableau de bord (accueil) : mêmes calculs que Recherche (`cardCalc`) et « À surveiller » (moyenne 7 j / 30 j),
+  avec la note visée, les frais et les fourchettes de prix réglés sur ces pages.
+- Le mot de passe n'est jamais écrit en clair dans le navigateur : passer par `session` (app.js).

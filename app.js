@@ -25,8 +25,16 @@ const pref = {
 };
 let view = pref.get("view", "grid") === "list" ? "list" : "grid";
 let chartRange = "all";
-const EYE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
-const EYE_OFF = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.94 17.94A10.9 10.9 0 0 1 12 19C5 19 1 12 1 12a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>';
+// Icônes : construites élément par élément (jamais de HTML en texte, la politique de sécurité l'interdit).
+const EYE = [["path", { d: "M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" }], ["circle", { cx: 12, cy: 12, r: 3 }]];
+const EYE_OFF = [["path", { d: "M17.94 17.94A10.9 10.9 0 0 1 12 19C5 19 1 12 1 12a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24" }], ["path", { d: "M1 1l22 22" }]];
+const REFRESH = [["path", { d: "M21 12a9 9 0 1 1-2.64-6.36" }], ["path", { d: "M21 3v6h-6" }]];
+const LOUPE = [["circle", { cx: 11, cy: 11, r: 7 }], ["path", { d: "M21 21l-4.3-4.3M11 8v6M8 11h6" }]];
+function icon(parts) {
+  const s = sv("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" });
+  parts.forEach(([tag, attrs]) => s.append(sv(tag, attrs)));
+  return s;
+}
 
 // ---------- chiffrement ----------
 async function deriveKey(password, salt, iterations, usage) {
@@ -34,13 +42,26 @@ async function deriveKey(password, salt, iterations, usage) {
   return crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations, hash: "SHA-256" },
     base, { name: "AES-GCM", length: 256 }, false, [usage]);
 }
+// La clé dérivée reste en mémoire (jamais écrite) : le calcul lent (PBKDF2) n'est refait que si le sel change.
+const keyCache = new Map();
+let keyCachePw = null;
+function cachedKey(password, salt, iter) {
+  if (keyCachePw !== password || keyCache.size > 8) { keyCache.clear(); keyCachePw = password; }
+  const id = salt + "|" + iter;
+  if (!keyCache.has(id)) {
+    const k = deriveKey(password, fromB64(salt), iter, "decrypt");
+    k.catch(() => keyCache.delete(id));
+    keyCache.set(id, k);
+  }
+  return keyCache.get(id);
+}
 async function decryptVault(blob, password) {
   if (state.guestKey) {                                   // invité : clé de lecture reçue avec son compte
     if (!keyring || blob.salt !== keyring.salt) throw new Error("rotated");
     const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(blob.iv) }, state.guestKey, fromB64(blob.data));
     return JSON.parse(new TextDecoder().decode(plain));
   }
-  const key = await deriveKey(password, fromB64(blob.salt), blob.iter, "decrypt");
+  const key = await cachedKey(password, blob.salt, blob.iter);
   const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(blob.iv) }, key, fromB64(blob.data));
   return JSON.parse(new TextDecoder().decode(plain));
 }
@@ -78,8 +99,9 @@ async function loadVault(file) {
   const token = getToken();
   const url = token ? API + "/contents/data/" + file + "?ref=main" : "data/" + file;
   const headers = token ? { Authorization: "Bearer " + token, Accept: "application/vnd.github.raw+json" } : {};
-  let r = await fetch(url, { cache: "no-store", headers });
-  if (!r.ok && token) r = await fetch("data/" + file, { cache: "no-store" });
+  const cache = file === "vault.json" ? "no-store" : "no-cache";   // recherche et cartes à surveiller : gros fichiers, retéléchargés seulement s'ils ont changé
+  let r = await fetch(url, { cache, headers });
+  if (!r.ok && token) r = await fetch("data/" + file, { cache });
   if (!r.ok) throw new Error(r.status === 404 ? "absent" : "vault");
   const blob = await r.json();
   try { return await decryptVault(blob, state.password); } catch (e) { throw new Error(e.message === "rotated" ? "rotated" : "password"); }
@@ -182,7 +204,79 @@ function el(tag, cls, text) {
 
 let lastUpdated = null;
 const qOf = c => c.quantite > 1 ? c.quantite : 1;
-const validImg = c => !!(c.image && c.image.startsWith("https://assets.tcgdex.net/"));
+// ---------- images des cartes : chargement différé, place réservée, repli quand l'image manque ----------
+const IMG_HOSTS = ["https://assets.tcgdex.net/", "https://images.pokemontcg.io/"];   // les deux hébergeurs d'images utilisés par TCGdex et Pokoya
+const validImg = c => !!(c && c.image && IMG_HOSTS.some(h => String(c.image).startsWith(h)));
+const BLANK = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+function bigImg(src) {   // grande version d'une image
+  if (src.startsWith(IMG_HOSTS[0])) return src.replace("/low.", "/high.");
+  if (src.startsWith(IMG_HOSTS[1]) && !src.includes("_hires.")) return src.replace(/\.png$/, "_hires.png");
+  return src;
+}
+// Suit le chargement d'une image : squelette animé en attendant ; si elle manque, la même carte dans la base
+// anglaise de TCGdex ; sinon un emplacement neutre de la bonne taille (jamais d'icône « image cassée »).
+function watchImg(img) {
+  img.addEventListener("load", () => img.classList.remove("ph"));
+  img.addEventListener("error", () => {
+    const src = img.getAttribute("src") || "";
+    if (src === BLANK) return;
+    if (!img.dataset.alt && src.startsWith(IMG_HOSTS[0] + "fr/")) { img.dataset.alt = "1"; img.src = src.replace("/fr/", "/en/"); return; }
+    img.classList.remove("ph"); img.classList.add("noimg");
+    delete img.dataset.zoom; delete img.dataset.cap;
+    img.src = BLANK;
+  });
+}
+const imgCaption = c => [c.nom, [c.set, c.numero].filter(Boolean).join(" · ")].filter(Boolean).join(" — ");
+// Image d'une carte. opt : alt, cls, eager (visible tout de suite), zoom (false = pas d'aperçu au clic), hover (aperçu au survol).
+function cardImg(c, opt) {
+  opt = opt || {};
+  const img = el("img", "cimg ph" + (opt.cls ? " " + opt.cls : ""));
+  img.alt = opt.alt || ""; img.decoding = "async"; img.referrerPolicy = "no-referrer";
+  if (!opt.eager) img.loading = "lazy";
+  img.dataset.cap = imgCaption(c);
+  if (opt.zoom !== false) img.dataset.zoom = "1";
+  watchImg(img);
+  if (opt.hover) { img.addEventListener("mouseenter", () => showZoom(img)); img.addEventListener("mouseleave", hideZoom); }
+  img.src = c.image;
+  return img;
+}
+
+// ---------- longues listes : les premières lignes tout de suite, la suite quand on approche du bas ----------
+const listPages = new WeakMap();
+function paged(box, parent, items, make, size) {
+  size = size || 40;
+  const old = listPages.get(box); if (old) old.stop();
+  const isBody = parent.tagName === "TBODY", sentinel = el(isBody ? "tr" : "div", "more");
+  if (isBody) sentinel.append(el("td"));
+  let shown = 0, io = null;
+  const more = upTo => {
+    const end = Math.min(items.length, Math.max(shown + size, upTo || 0)), frag = document.createDocumentFragment();
+    for (let i = shown; i < end; i++) frag.append(make(items[i], i));
+    shown = end; sentinel.before(frag);
+    if (shown >= items.length) { if (io) io.disconnect(); sentinel.remove(); }
+    else if (io) { io.unobserve(sentinel); io.observe(sentinel); }   // encore près du bas : on continue
+  };
+  parent.append(sentinel); more();
+  if (shown < items.length) {
+    if ("IntersectionObserver" in window) {
+      io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) more(); }, { rootMargin: "900px 0px" });
+      io.observe(sentinel);
+    } else more(items.length);
+  }
+  const handle = { ensure: i => { if (i >= shown) more(i + 1); }, stop: () => { if (io) io.disconnect(); } };
+  listPages.set(box, handle);
+  return handle;
+}
+// Lignes « squelette » affichées pendant un chargement.
+function skeleton(n) {
+  const box = el("div", "sklist"); box.setAttribute("aria-hidden", "true");
+  for (let i = 0; i < n; i++) {
+    const r = el("div", "skrow"), b = el("div", "skbody");
+    b.append(el("div", "sk skline"), el("div", "sk skline short"));
+    r.append(el("div", "sk skimg"), b); box.append(r);
+  }
+  return box;
+}
 const signedPct = v => (v > 0 ? "+" : "") + v.toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " %";
 const fmtDay = u => /^\d{4}-\d{2}-\d{2}/.test(String(u)) ? new Date(String(u).slice(0, 10) + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : String(u);
 function totals() {
@@ -266,7 +360,7 @@ function refreshBtn() {
   b.type = "button";
   b.title = "Actualiser les prix CCC (ventes réussies sur Graded Card Center)";
   b.setAttribute("aria-label", "Actualiser les prix CCC");
-  b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
+  b.append(icon(REFRESH));
   b.addEventListener("click", ev => { ev.stopPropagation(); refreshCcc(b); });
   return b;
 }
@@ -286,8 +380,10 @@ function gridCard(c, q, gain) {
   if (c.id && c.id === chartSel && !$("chartPanel").hidden) d.classList.add("sel");
   const pic = el("div", "gpic");
   if (validImg(c)) {
-    const img = el("img"); img.src = c.image; img.alt = c.nom; img.loading = "lazy"; img.referrerPolicy = "no-referrer";
-    pic.append(img);
+    const img = cardImg(c, { alt: c.nom, zoom: false });   // un clic sur la carte ouvre sa fiche : l'aperçu en grand passe par la loupe
+    const z = el("button", "gzoom"); z.type = "button"; z.title = "Voir la carte en grand"; z.setAttribute("aria-label", "Voir " + c.nom + " en grand");
+    z.append(icon(LOUPE)); z.addEventListener("click", () => lightbox.open(img));
+    pic.append(img, z);
   } else pic.append(el("span", "meta", "Pas d'image"));
   if (q > 1) pic.append(el("span", "qty", "× " + q));
   if (c.uid && !c.pending) {
@@ -322,12 +418,7 @@ function draw(updated) {
     if (view === "grid") { grid.append(gridCard(c, q, gain)); return; }
     const tr = el("tr", c.pending ? "pending" : "");
     const imgCell = el("td", "img");
-    if (validImg(c)) {
-      const img = el("img"); img.src = c.image; img.alt = ""; img.referrerPolicy = "no-referrer";
-      imgCell.append(img);
-      img.addEventListener("mouseenter", () => showZoom(img, c.image));
-      img.addEventListener("mouseleave", hideZoom);
-    }
+    if (validImg(c)) imgCell.append(cardImg(c, { hover: true }));
     const info = el("td");
     const metaParts = [c.set, c.numero, q > 1 ? "× " + q + " exemplaires" : ""].filter(Boolean).join(" · ");
     openOnClick(tr, c);
@@ -403,8 +494,9 @@ function draw(updated) {
 const cmLink = c => "https://www.cardmarket.com/fr/Pokemon/Products?idProduct=" + encodeURIComponent(c.cm_id);
 
 // ---------- agrandissement de la carte au survol ----------
-function showZoom(img, src) {
-  const z = $("zoom"), big = src.replace("/low.webp", "/high.webp");
+function showZoom(img) {
+  if (img.classList.contains("noimg")) return;
+  const z = $("zoom"), src = img.currentSrc || img.src, big = bigImg(src);
   z.onerror = () => { z.onerror = null; z.src = src; };
   z.src = big;
   const r = img.getBoundingClientRect();
@@ -517,7 +609,11 @@ function renderChart() {
   fillEdit(card && card.uid ? card : null);
   const img = $("chartImg");
   if (card && validImg(card)) {
-    img.src = card.image; img.referrerPolicy = "no-referrer"; img.hidden = false;
+    if (img.getAttribute("src") !== card.image) {
+      delete img.dataset.alt; img.classList.remove("noimg"); img.classList.add("ph");
+      img.dataset.zoom = "1"; img.dataset.cap = imgCaption(card); img.src = card.image;
+    }
+    img.referrerPolicy = "no-referrer"; img.hidden = false;
   } else { img.hidden = true; img.removeAttribute("src"); }
 
   const pts = rangePts(chartPoints()), plot = $("plot"), sum = $("chartSum");
@@ -758,9 +854,7 @@ async function searchCard(auto) {
     let shown = 0;
     const addItem = ({ c, sid, s }) => {
       const b = el("button", "ghost"); b.type = "button";
-      if (c.image && String(c.image).startsWith("https://assets.tcgdex.net/")) {
-        const im = el("img"); im.src = c.image + "/low.webp"; im.alt = ""; im.loading = "lazy"; im.referrerPolicy = "no-referrer"; b.append(im);
-      }
+      if (c.image && String(c.image).startsWith(IMG_HOSTS[0])) b.append(cardImg({ image: c.image + "/low.webp", nom: c.name }, { zoom: false }));
       b.append(el("span", "", c.name + " · " + (s ? s.name : sid) + " · n° " + c.localId));
       b.addEventListener("click", () => pickCard(c, sid, s));
       box.append(b);
@@ -854,15 +948,21 @@ function setPage(p) {
   $("rechPage").hidden = page !== "rech"; $("fichePage").hidden = page !== "fiche"; $("watchPage").hidden = page !== "watch";
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.p === page));
   hideZoom(); renderSim();
-  if (page !== "col") { if (!research && !researchErr) loadResearch(); else renderResearch(); }
+  ensureResearch();
+  if (page === "col") renderDash(); else renderResearch();
 }
+// Recherche et cartes à surveiller : chargées une seule fois, dès la connexion (le tableau de bord en a besoin).
+let researchJob = null, researchDone = false;
+function ensureResearch() { if (!researchJob) researchJob = loadResearch(); return researchJob; }
 async function loadResearch() {
   $("rInfo").textContent = "Chargement de la recherche…";
   const [r, w] = await Promise.allSettled([loadVault("research.json"), loadVault("watch.json")]);
   watch = w.status === "fulfilled" ? w.value : null;
   if (r.status === "fulfilled") { research = r.value; researchErr = ""; await mergeFrPrices(); }
   else researchErr = r.reason.message === "absent" ? "La première recherche sera prête après le relevé automatique de demain matin." : "Recherche indisponible pour le moment.";
-  renderResearch();
+  researchDone = true;
+  renderDash();
+  if (page !== "col") renderResearch();
 }
 // Cartes de 2018 et après seulement. Prix loose : français Near Mint relevé sur Pokoya (c.fr), jamais toutes langues.
 const ANNEE_MIN = 2018;
@@ -898,6 +998,7 @@ function liquidity(c, s) {
   return { score, days, hype, label: lvl[0], cls: lvl[1] };
 }
 // ---------- page « À surveiller » : cartes dont le prix monte vite ----------
+let watchFocus = null;   // clé de la carte à ouvrir en arrivant sur la page (depuis le tableau de bord)
 let watch = null;     // cartes à surveiller (data/watch.json) : toutes les cartes Pokoya en hausse, avec moyennes et 14 derniers jours
 let researchByKey = new Map();   // carte de la recherche par clé (prix CCC d'une carte à surveiller)
 [["wUp", "w_up", "20"], ["wMin", "w_min", "10"], ["wMax", "w_max", ""], ["wYear", "w_year", "2018"], ["wSort", "w_sort", "pct"]].forEach(([id, k, d]) => {
@@ -907,14 +1008,18 @@ let researchByKey = new Map();   // carte de la recherche par clé (prix CCC d'u
   sel.value = v; if (sel.value !== v) sel.value = d; });
 // Montant tapé à la main : « 350 », « 350,50 », « 350 € » ; vide = pas de limite (minimum : 0).
 const cleanMoney = id => { const x = parseFloat($(id).value.replace(",", ".").replace(/[^\d.]/g, "")); return isNaN(x) || x < 0 ? "" : String(x); };
-function applyWatch() {
+const debounce = (fn, ms) => { let t = null; return () => { clearTimeout(t); t = setTimeout(fn, ms); }; };
+// Les filtres s'appliquent tout de suite. tidy = false pendant la frappe : on ne réécrit pas le champ sous les doigts.
+function applyWatch(tidy) {
   const mn = cleanMoney("wMin"), mx = cleanMoney("wMax");
-  $("wMin").value = mn; $("wMax").value = mx;
+  if (tidy !== false) { $("wMin").value = mn; $("wMax").value = mx; }
   [["wUp", "w_up", $("wUp").value], ["wMin", "w_min", mn === "" ? "0" : mn], ["wMax", "w_max", mx], ["wYear", "w_year", $("wYear").value], ["wSort", "w_sort", $("wSort").value]].forEach(([id, k, v]) => pref.set(k, v));
   renderWatch();
 }
-$("wApply").addEventListener("click", applyWatch);
-["wMin", "wMax"].forEach(id => { $(id).addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); applyWatch(); } }); $(id).addEventListener("focus", () => $(id).select()); });
+["wUp", "wYear", "wSort"].forEach(id => $(id).addEventListener("change", () => applyWatch()));
+{ const later = debounce(() => applyWatch(false), 220);
+  ["wMin", "wMax"].forEach(id => { $(id).addEventListener("input", later); $(id).addEventListener("change", () => applyWatch());
+    $(id).addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); applyWatch(); } }); $(id).addEventListener("focus", () => $(id).select()); }); }
 const shortDay = d => new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
 function miniTable(title, heads, rows) {
   const box = el("div"), t = el("table", "mini"), th = el("tr");
@@ -1066,10 +1171,7 @@ function watchTable(cols, rows) {
 }
 function watchCell(c, rank, extraText) {
   const imgCell = el("td", "img");
-  if (validImg(c)) {
-    const img = el("img"); img.src = c.image; img.alt = ""; img.loading = "lazy"; img.referrerPolicy = "no-referrer";
-    img.addEventListener("mouseenter", () => showZoom(img, c.image)); img.addEventListener("mouseleave", hideZoom); imgCell.append(img);
-  }
+  if (validImg(c)) imgCell.append(cardImg(c, { hover: true }));
   const info = el("td"), name = el("div", "name");
   name.append(el("span", "rank", "#" + rank), c.nom);
   info.append(name, el("div", "meta", [c.set, c.numero, c.annee].filter(Boolean).join(" · ")));
@@ -1079,6 +1181,7 @@ function watchCell(c, rank, extraText) {
 function renderWatch() {
   const up = Number(pref.get("w_up", "20")) || 20, min = rNum("w_min", 10), max = rNum("w_max", Infinity), sort = pref.get("w_sort", "pct"), year = Number(pref.get("w_year", "2018")) || 0;
   const box = $("wList"), colBox = $("wCol");
+  if (!researchDone) { $("wInfo").textContent = "Chargement…"; box.replaceChildren(skeleton(6)); colBox.replaceChildren(); return; }
   if (!research && !watch) { $("wInfo").textContent = researchErr; box.replaceChildren(); colBox.replaceChildren(); return; }
   const range = (min ? " ≥ " + min + " €" : "") + (max < Infinity ? " ≤ " + max + " €" : "");
   // 1. toutes les cartes Pokoya en hausse : moyenne 7 jours / moyenne 30 jours (prix FR)
@@ -1091,9 +1194,9 @@ function renderWatch() {
       + rows.length + " en hausse d'au moins " + up + " % (prix moyen 7 jours" + (range || " : tous") + (year ? ", cartes de " + year + " et après" : "") + ")" + (rows.length > 300 ? ", les 300 premières affichées." : ".")
     : "";
   if (!watch) box.replaceChildren(el("p", "help", "La liste de toutes les cartes Pokoya arrive avec le prochain relevé automatique (chaque matin à 4 h 15, heure UTC). Reviens ensuite."));
-  else if (!rows.length) box.replaceChildren(el("p", "help", watch.suivies ? "Aucune carte ne correspond : baisse la hausse minimum, élargis les prix ou recule l'année, puis clique sur « Actualiser »." : "L'historique des cartes se construit : il faut au moins 10 jours de prix pour calculer les moyennes. Reviens dans quelques jours."));
+  else if (!rows.length) box.replaceChildren(el("p", "help", watch.suivies ? "Aucune carte ne correspond : baisse la hausse minimum, élargis les prix ou recule l'année." : "L'historique des cartes se construit : il faut au moins 10 jours de prix pour calculer les moyennes. Reviens dans quelques jours."));
   else {
-    const trs = rows.slice(0, 300).map((r, i) => {
+    const shown = rows.slice(0, 300), make = (r, i) => {
       const { c } = r, rc = researchByKey.get(c.k), tr = el("tr"), [imgCell, info] = watchCell(c, i + 1, cccLine(rc || {}));
       const a = (v, lab) => { const td = el("td", "r"); td.append(el("div", "money", fmt(v))); td.dataset.label = lab; return td; };
       const pct = el("td", "r big up"); pct.append(el("span", "pill up", signedPct(r.pct))); pct.dataset.label = "Hausse";
@@ -1110,9 +1213,17 @@ function renderWatch() {
       tr.addEventListener("click", ev => { if (!ev.target.closest("a, button")) open(); });
       tr.addEventListener("keydown", ev => { if (ev.key === "Enter" && ev.target === tr) open(); });
       return tr;
-    });
-    box.replaceChildren(watchTable([["", ""], ["Carte", ""], ["Moy. 30 j", "r"], ["Moy. 7 j", "r"], ["Moy. 1 j", "r"], ["Hausse", "r"], ["Liquidité", "r"], ["", "r"]], trs));
+    };
+    const table = watchTable([["", ""], ["Carte", ""], ["Moy. 30 j", "r"], ["Moy. 7 j", "r"], ["Moy. 1 j", "r"], ["Hausse", "r"], ["Liquidité", "r"], ["", "r"]], []);
+    box.replaceChildren(table);
+    const pages = paged(box, table.tBodies[0], shown, make), at = watchFocus ? shown.findIndex(r => r.c.k === watchFocus) : -1;
+    if (at >= 0) {   // carte choisie dans le tableau de bord : on ouvre son détail
+      pages.ensure(at);
+      const tr = table.tBodies[0].children[at];
+      tr.click(); requestAnimationFrame(() => tr.scrollIntoView({ block: "center" }));
+    }
   }
+  watchFocus = null;
   // 2. cartes de la collection : prix du jour comparé à celui d'il y a une semaine environ (historique du site)
   const hist = (state.vault && state.vault.history) || {}, mine = [];
   let enoughHistory = false;
@@ -1163,7 +1274,7 @@ return "";
 }
 function renderFichePage() {
 const box = $("fichePage");
-if (!research) { box.replaceChildren(el("p", "help", researchErr || "Chargement de la fiche…")); return; }
+if (!research) { box.replaceChildren(researchDone ? el("p", "help", researchErr) : skeleton(3)); return; }
 const c = research.cartes.find(x => cardKey(x) === FICHE_KEY);
 if (!c) { box.replaceChildren(el("p", "help", "Carte introuvable dans le relevé du jour. Reviens à la recherche et clique de nouveau sur la carte.")); return; }
 document.title = c.nom + " · " + (c.set || "");
@@ -1187,7 +1298,7 @@ function cardCalc(c, s) {
 }
 function drawFiche(c) {
   const box = el("div", "fiche");
-  if (validImg(c)) { const img = el("img", "big"); img.src = c.image; img.alt = ""; img.referrerPolicy = "no-referrer"; box.append(img); }
+  if (validImg(c)) box.append(cardImg(c, { cls: "big", eager: true }));
   const body = el("div", "fbody");
   body.append(el("div", "name", c.nom), el("div", "meta", [c.set, c.numero, c.annee].filter(Boolean).join(" · ")));
   body.append(el("div", "label", "Prix loose (Cardmarket, français near mint, relevé sur Pokoya)"), el("div", "fprice", fmt(c.loose)));
@@ -1230,7 +1341,7 @@ function renderCardSearch() {
   if (found.length > 1) {
     cardShown.forEach((c, i) => {
       const b = el("button", "cr" + (c === cardSel ? " on" : "")); b.type = "button"; b.dataset.i = String(i);
-      if (validImg(c)) { const img = el("img"); img.src = c.image; img.alt = ""; img.loading = "lazy"; img.referrerPolicy = "no-referrer"; b.append(img); }
+      if (validImg(c)) b.append(cardImg(c, { zoom: false }));
       const t = el("span"); t.append(el("span", "name", c.nom), el("span", "meta", " · " + [c.set, c.numero].filter(Boolean).join(" · "))); b.append(t); list.push(b);
     });
     if (found.length > cardShown.length) list.push(el("p", "help", (found.length - cardShown.length) + " autres cartes correspondent : précise ta recherche (extension, numéro)."));
@@ -1272,7 +1383,7 @@ if (page === "watch") { renderWatch(); return; }
   document.querySelectorAll("#rSort button").forEach(b => b.classList.toggle("on", b.dataset.s === pref.get("r_sort", "top")));
   const box = $("rList");
   renderCardSearch();
-  if (!research) { $("rInfo").textContent = researchErr; box.replaceChildren(); return; }
+  if (!research) { $("rInfo").textContent = researchDone ? researchErr : "Chargement de la recherche…"; box.replaceChildren(...(researchDone ? [] : [skeleton(8)])); return; }
   const rows = researchRows(), shown = rows.slice(0, 1000);
   $("rInfo").textContent = "Relevé du " + fmtDay(research.updated) + " · " + research.cartes.length + " cartes analysées (2018 et après) · "
     + rows.length + " correspondent à tes filtres" + (rows.length > shown.length ? " (les 1000 meilleures affichées)" : "") + ".";
@@ -1281,14 +1392,10 @@ if (page === "watch") { renderWatch(); return; }
   const table = el("table"), head = el("tr"), thead = el("thead"), tbody = el("tbody");
   cols.forEach(([t, k]) => head.append(el("th", k, t)));
   thead.append(head); table.append(thead, tbody);
-  shown.forEach((r, i) => {
+  const make = (r, i) => {
     const { c, s } = r, tr = el("tr");
     const imgCell = el("td", "img");
-    if (validImg(c)) {
-      const img = el("img"); img.src = c.image; img.alt = ""; img.loading = "lazy"; img.referrerPolicy = "no-referrer";
-      img.addEventListener("mouseenter", () => showZoom(img, c.image)); img.addEventListener("mouseleave", hideZoom);
-      imgCell.append(img);
-    }
+    if (validImg(c)) imgCell.append(cardImg(c, { hover: true }));
     const info = el("td"), name = el("div", "name");
     name.append(el("span", "rank", "#" + (i + 1)), c.nom);
     const others = ["10", "9.5", "9"].filter(n => n !== note && c.ccc[n]).map(n => "CCC " + n + " ≈ " + fmt(c.ccc[n].prix)).join(" · ");
@@ -1314,9 +1421,72 @@ tr.classList.add("clk"); tr.tabIndex = 0; tr.title = "Ouvrir la fiche de la cart
 tr.addEventListener("click", ev => { if (!ev.target.closest("a, button")) openFiche(c); });
 tr.addEventListener("keydown", ev => { if (ev.key === "Enter" && ev.target === tr) openFiche(c); });
     [...tr.children].forEach((td, j) => { if (j > 1 && cols[j][0]) td.dataset.label = cols[j][0]; });
-    tbody.append(tr);
-  });
+    return tr;
+  };
   box.replaceChildren(table);
+  paged(box, tbody, shown, make);
+}
+
+// ---------- tableau de bord (accueil) : les meilleures opportunités du jour ----------
+// Mêmes données et mêmes calculs que les pages Recherche et « À surveiller » : note visée, frais et fourchettes de prix
+// sont ceux réglés sur ces pages. Seules les cartes au prix CCC fiable sont retenues pour l'achat-gradation.
+const DASH_N = 3, DASH_VENTES = 2, DASH_JOURS = 60;
+function dashArbitrage() {
+  const note = pref.get("r_note", "10"), min = rNum("r_min", 5), max = rNum("r_max", Infinity);
+  const minN = Math.max(DASH_VENTES, Number(pref.get("r_n", "1")) || 1);
+  return research.cartes.map(c => {
+    const s = (c.ccc || {})[note];
+    if (!s || c.loose == null || c.loose < min || c.loose > max || s.n < minN) return null;
+    const k = cardCalc(c, s);
+    return k.gain > 0 && k.liq.days <= DASH_JOURS ? { c, s, k } : null;
+  }).filter(Boolean).sort((a, b) => b.k.gain - a.k.gain).slice(0, DASH_N);
+}
+function dashPumps() {
+  const min = rNum("w_min", 10), max = rNum("w_max", Infinity), year = Number(pref.get("w_year", "2018")) || 0;
+  return watch.cartes.filter(c => c.avg7 > 0 && c.avg30 > 0 && c.avg7 >= min && c.avg7 <= max && (!year || Number(c.annee) >= year))
+    .map(c => ({ c, pct: (c.avg7 / c.avg30 - 1) * 100 })).sort((a, b) => b.pct - a.pct).slice(0, DASH_N);
+}
+function oppItem(c, rank, stats, onOpen, title) {
+  const d = el("div", "opp"); d.tabIndex = 0; d.setAttribute("role", "button"); d.title = title;
+  d.append(validImg(c) ? cardImg(c, { eager: true }) : el("span", "cimg noimg"));
+  const body = el("div", "oppbody"), name = el("div", "name"), grid = el("div", "oppstats");
+  name.append(el("span", "rank", "#" + rank), c.nom);
+  stats.forEach(([label, node]) => { const cell = el("div"); cell.append(el("span", "label", label), node); grid.append(cell); });
+  body.append(name, el("div", "meta", [c.set, c.numero, c.annee].filter(Boolean).join(" · ")), grid);
+  d.append(body);
+  d.addEventListener("click", ev => { if (!ev.target.closest("a, button")) onOpen(); });
+  d.addEventListener("keydown", ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === d) { ev.preventDefault(); onOpen(); } });
+  return d;
+}
+const strongMoney = (text, cls) => el("strong", "money" + (cls ? " " + cls : ""), text);
+function renderDash() {
+  const open = pref.get("dash", "1") !== "0", t = $("dashToggle");
+  $("dashBody").hidden = !open; t.textContent = open ? "Masquer" : "Afficher"; t.setAttribute("aria-expanded", String(open));
+  if (!open) return;
+  const arb = $("dashArb"), up = $("dashUp"), arbInfo = $("dashArbInfo"), upInfo = $("dashUpInfo");
+  if (!researchDone) { arb.replaceChildren(skeleton(DASH_N)); up.replaceChildren(skeleton(DASH_N)); arbInfo.textContent = upInfo.textContent = "Chargement des relevés…"; return; }
+  const note = pref.get("r_note", "10");
+  if (!research) { arbInfo.textContent = ""; arb.replaceChildren(el("p", "help", researchErr)); }
+  else {
+    const rows = dashArbitrage();
+    arbInfo.textContent = "Relevé du " + fmtDay(research.updated) + " · loose FR (Pokoya) contre ventes CCC " + note + " (GCC), frais déduits · au moins "
+      + DASH_VENTES + " ventes, la dernière depuis moins de " + DASH_JOURS + " jours.";
+    arb.replaceChildren(...(rows.length ? rows.map((r, i) => {
+      const gain = el("div"); gain.append(strongMoney(signed(r.k.gain), "up"), " ", el("span", "pill up", signedPct(r.k.roi)));
+      return oppItem(r.c, i + 1, [["Achat (loose)", strongMoney(fmt(r.c.loose))], ["Revente CCC " + note, strongMoney(fmt(r.s.prix))], ["Plus-value nette", gain]],
+        () => openFiche(r.c), "Ouvrir la fiche de la carte dans un nouvel onglet");
+    }) : [el("p", "help", "Aucune opportunité fiable avec tes réglages aujourd'hui. Le classement complet est dans l'onglet Recherche.")]));
+  }
+  if (!watch) { upInfo.textContent = ""; up.replaceChildren(el("p", "help", "La liste des cartes en hausse arrive avec le prochain relevé automatique.")); }
+  else {
+    const rows = dashPumps(), min = rNum("w_min", 10), year = Number(pref.get("w_year", "2018")) || 0;
+    upInfo.textContent = "Relevé du " + fmtDay(watch.updated) + " · prix FR moyen sur 7 jours comparé aux 30 derniers jours"
+      + (min ? " · cartes à " + min + " € ou plus" : "") + (year ? " · " + year + " et après" : "") + ".";
+    up.replaceChildren(...(rows.length ? rows.map((r, i) => oppItem(r.c, i + 1,
+      [["Moy. 30 jours", strongMoney(fmt(r.c.avg30))], ["Moy. 7 jours", strongMoney(fmt(r.c.avg7))], ["Hausse", el("span", "pill up", signedPct(r.pct))]],
+      () => { watchFocus = r.c.k; goPage("watch"); }, "Voir l'évolution jour par jour et les prix CCC"))
+      : [el("p", "help", "Aucune carte en hausse avec tes réglages aujourd'hui.")]));
+  }
 }
 
 async function openAccounts() {
@@ -1491,7 +1661,7 @@ async function secCommit() {
     if (p.newPw && (await unwrapMaster(p.newPw, auth.login)) !== state.password) throw new Error("login");
     if (p.code && (await unwrapMaster(normCode(p.code), auth.recovery)) !== state.password) throw new Error("code");
   } catch (e) { return secErr("Enregistré, mais la vérification a échoué : ne ferme pas cette page, ton ancien mot de passe fonctionne toujours."); }
-  if (p.newPw) { try { const s = JSON.parse(sessionStorage.getItem("k") || "{}"); sessionStorage.setItem("k", JSON.stringify({ u: s.u || "", p: p.newPw })); } catch (e) {} }
+  if (p.newPw) await session.save(state.user, p.newPw);
   secPending = null; secReset = false; $("secCode").textContent = ""; $("secCodeBox").hidden = true; $("secForm").hidden = false;
   ["sCur", "sNew", "sNew2"].forEach(id => { $(id).value = ""; });
   $("secState").textContent = "Protection active : tu te connectes avec un mot de passe que tu peux changer, et un code de récupération existe.";
@@ -1514,19 +1684,98 @@ function openToken() {
   $("tokenIn").focus();
 }
 
-// ---------- verrouillage automatique après inactivité ----------
+// ---------- session : rester connecté le temps de l'onglet, sans mot de passe lisible dans le navigateur ----------
+// Le mot de passe n'est jamais écrit en clair. Pour survivre à un rechargement (ou ouvrir une fiche dans un nouvel
+// onglet), il est chiffré avec une clé aléatoire que le navigateur garde sans jamais la laisser lire ni exporter
+// (IndexedDB, clé « non extractible »). Se déconnecter détruit cette clé : plus aucun onglet ne peut rouvrir la session.
+// Si ce stockage n'existe pas (navigation privée de certains navigateurs), rien n'est gardé : on se reconnecte.
 const LOCK_MIN = () => { const v = Number(pref.get("lock", "30")); return [0, 15, 30, 60, 240].includes(v) ? v : 30; };
-let lastActive = Date.now();
-["pointerdown", "keydown", "scroll", "touchstart"].forEach(t => addEventListener(t, () => { lastActive = Date.now(); }, { passive: true, capture: true }));
-function lockNow() { try { sessionStorage.removeItem("k"); } catch (e) {} location.reload(); }
-setInterval(() => {
+const session = (() => {
+  const DB = "coffre", STORE = "session", ID = "cle";
+  let saved = 0;
+  const tx = (mode, fn) => new Promise((res, rej) => {
+    let open; try { open = indexedDB.open(DB, 1); } catch (e) { rej(e); return; }
+    open.onupgradeneeded = () => open.result.createObjectStore(STORE);
+    open.onerror = () => rej(open.error); open.onblocked = () => rej(new Error("idb"));
+    open.onsuccess = () => {
+      const db = open.result;
+      try {
+        const t = db.transaction(STORE, mode), rq = fn(t.objectStore(STORE));
+        t.oncomplete = () => { db.close(); res(rq.result); };
+        t.onerror = t.onabort = () => { db.close(); rej(t.error || new Error("idb")); };
+      } catch (e) { db.close(); rej(e); }
+    };
+  });
+  async function tabKey(create) {
+    const have = await tx("readonly", st => st.get(ID));
+    if (have || !create) return have || null;
+    const fresh = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+    const first = await tx("readwrite", st => { const g = st.get(ID); g.onsuccess = () => { if (!g.result) st.put(fresh, ID); }; return g; });
+    return first || fresh;   // si un autre onglet a créé la clé entre-temps, on prend la sienne
+  }
+  const drop = () => { try { sessionStorage.removeItem("k"); sessionStorage.removeItem("t"); } catch (e) {} };
+  return {
+    async save(u, p) {
+      try {
+        const key = await tabKey(true), iv = crypto.getRandomValues(new Uint8Array(12));
+        const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(JSON.stringify({ u: u || "", p })));
+        sessionStorage.setItem("k", JSON.stringify({ v: 2, iv: toB64(iv), data: toB64(new Uint8Array(ct)) }));
+        this.touch(true);
+      } catch (e) { drop(); }
+    },
+    async restore() {
+      let raw = null; try { raw = sessionStorage.getItem("k"); } catch (e) {}
+      if (!raw) return null;
+      let s = null; try { s = JSON.parse(raw); } catch (e) { s = { p: raw }; }
+      if (!s || s.v !== 2) {   // session laissée par une ancienne version du site (mot de passe en clair) : chiffrée maintenant
+        if (!s || !s.p) { drop(); return null; }
+        await this.save(s.u, s.p); return { u: s.u || "", p: s.p };
+      }
+      const t = Number(sessionStorage.getItem("t")), m = LOCK_MIN();
+      if (m && t && Date.now() - t > m * 60000) { drop(); return null; }   // onglet resté inactif trop longtemps
+      try {
+        const key = await tabKey(false);
+        if (!key) { drop(); return null; }
+        const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(s.iv) }, key, fromB64(s.data));
+        return JSON.parse(new TextDecoder().decode(plain));
+      } catch (e) { drop(); return null; }
+    },
+    touch(force) {   // heure de la dernière activité, écrite au plus toutes les 10 s
+      const now = Date.now();
+      if (!force && now - saved < 10000) return;
+      saved = now; try { if (sessionStorage.getItem("k")) sessionStorage.setItem("t", String(now)); } catch (e) {}
+    },
+    async end(everywhere) {
+      drop();
+      if (everywhere) { try { await tx("readwrite", st => st.delete(ID)); } catch (e) {} }
+    },
+  };
+})();
+
+// ---------- verrouillage : après inactivité (cet onglet), ou à la déconnexion (tous les onglets) ----------
+let lastActive = Date.now(), locking = false;
+const unlocked = () => !$("app").hidden;
+["pointerdown", "keydown", "scroll", "touchstart"].forEach(t => addEventListener(t, () => { lastActive = Date.now(); if (unlocked()) session.touch(); }, { passive: true, capture: true }));
+const lockChan = "BroadcastChannel" in window ? new BroadcastChannel("coffre") : null;
+async function lockNow(everywhere) {
+  if (locking) return; locking = true;
+  if (everywhere && lockChan) lockChan.postMessage("lock");
+  await Promise.race([session.end(everywhere), sleep(1500)]);
+  location.reload();
+}
+if (lockChan) lockChan.onmessage = ev => { if (ev.data === "lock" && unlocked() && !locking) { locking = true; session.end(false); location.reload(); } };
+function idleCheck() {
   const m = LOCK_MIN();
-  if (m && !$("app").hidden && !state.busy && Date.now() - lastActive > m * 60000) lockNow();
-}, 30000);
+  if (m && unlocked() && !state.busy && Date.now() - lastActive > m * 60000) lockNow(false);
+}
+setInterval(idleCheck, 30000);
+// Retour sur l'onglet (téléphone sorti de veille, onglet remis au premier plan) : on vérifie tout de suite, sans attendre.
+document.addEventListener("visibilitychange", () => { if (!document.hidden) idleCheck(); });
+addEventListener("pageshow", ev => { if (ev.persisted) idleCheck(); });
 
 // ---------- démarrage ----------
 async function unlock(password, user, direct) {
-  state.guestKey = null;
+  state.guestKey = null; state.user = user || "";
   if (!direct && user && await guestUnlock(user, password)) state.password = null;
   else state.password = direct ? password : await masterFrom(password);
   const guest = !!state.guestKey;
@@ -1541,26 +1790,33 @@ if (FICHE_KEY) { setPage("fiche"); return; }
   openFromHash();
 }
 
-let failures = 0;
+// Essais ratés : retenus même si la page est rechargée (oubliés après 15 minutes).
+let failures = (() => { try { const f = JSON.parse(pref.get("fail", "null")); return f && Date.now() - f.t < 9e5 ? Math.min(Number(f.n) || 0, 10) : 0; } catch (e) { return 0; } })();
+const setFailures = n => { failures = n; pref.set("fail", n ? JSON.stringify({ n, t: Date.now() }) : null); };
 $("login").addEventListener("submit", async ev => {
   ev.preventDefault();
   const btn = $("go"), err = $("err"), pw = $("pw").value, user = $("user").value;
   btn.disabled = true; err.textContent = "";
-  if (failures) await sleep(Math.min(30, 2 ** failures) * 1000);   // freine les essais en série
+  if (failures) {   // freine les essais en série
+    const wait = Math.min(30, 2 ** failures);
+    err.textContent = "Essai précédent refusé : nouvel essai dans " + wait + " s…";
+    await sleep(wait * 1000); err.textContent = "";
+  }
+  btn.textContent = "Déverrouillage…";
   try {
     if (recoverMode) {
       const master = await masterFromCode(pw);
       await unlock(master, "", true);
-      failures = 0;
-      try { sessionStorage.setItem("k", JSON.stringify({ u: "", p: master })); } catch (e) {}
+      setFailures(0);
+      await session.save("", master);
       setRecover(false); openSecurity(true);
     } else {
       await unlock(pw, user);
-      failures = 0;
-      try { sessionStorage.setItem("k", JSON.stringify({ u: user, p: pw })); } catch (e) {}
+      setFailures(0);
+      await session.save(user, pw);
     }
   } catch (e) {
-    state.password = null; state.guestKey = null; failures++;
+    state.password = null; state.guestKey = null; setFailures(failures + 1);
     err.textContent = e.message === "noauth" ? "Aucun code de récupération n'a encore été créé : connecte-toi avec ton mot de passe, puis Réglages › Sécurité."
       : e.message === "code" ? "Code de récupération incorrect."
       : e.message === "password" ? (recoverMode ? "Code de récupération incorrect." : "Identifiant ou mot de passe incorrect.")
@@ -1568,6 +1824,7 @@ $("login").addEventListener("submit", async ev => {
       : "Données indisponibles pour le moment.";
   } finally {
     btn.disabled = false; $("pw").value = "";
+    btn.textContent = recoverMode ? "Récupérer l'accès" : "Déverrouiller";
   }
 });
 
@@ -1620,7 +1877,7 @@ function applyColors() {
 function applyFrame(n) { n = Math.min(100, Math.max(0, n)); document.documentElement.style.setProperty("--frame", n + "%"); $("frameVal").textContent = n + " %"; }
 function applyHide(on) {
   document.body.classList.toggle("hide-money", on);
-  const b = $("btnEye"); b.innerHTML = on ? EYE_OFF : EYE;
+  const b = $("btnEye"); b.replaceChildren(icon(on ? EYE_OFF : EYE));
   b.setAttribute("aria-pressed", String(on)); b.title = on ? "Afficher les montants" : "Cacher les montants";
 }
 function applyWall(url) {
@@ -1670,7 +1927,7 @@ $("forgot").addEventListener("click", () => setRecover(!recoverMode));
 $("acctClose").addEventListener("click", () => { $("acctPanel").hidden = true; });
 $("acctPanel").addEventListener("submit", addAccount);
 $("aGen").addEventListener("click", () => { $("aPw").value = genPassword(); });
-$("logout").addEventListener("click", lockNow);
+$("logout").addEventListener("click", () => lockNow(true));
 $("lockSel").value = String(LOCK_MIN());
 $("lockSel").addEventListener("change", () => { pref.set("lock", $("lockSel").value); lastActive = Date.now(); });
 $("themeSeg").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; pref.set("theme", b.dataset.t); applyTheme(b.dataset.t); });
@@ -1721,7 +1978,7 @@ function closeTop() {   // ferme le panneau le plus « au-dessus »
   return false;
 }
 document.addEventListener("keydown", ev => {
-  if ($("app").hidden || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  if ($("app").hidden || ev.ctrlKey || ev.metaKey || ev.altKey || lightbox.isOpen()) return;
   const typing = ev.target.closest && ev.target.closest("input, textarea, select, [contenteditable]");
   if (ev.key === "Escape") { if (closeTop() || typing) { if (typing) ev.target.blur(); ev.preventDefault(); } return; }
   if (typing || ev.repeat) return;
@@ -1732,47 +1989,91 @@ document.addEventListener("keydown", ev => {
     "/": () => { if (page === "rech") { $("cQ").focus(); $("cQ").select(); } else if (!guest) { if (page !== "col") goPage("col"); openAdd(); } },
     "e": () => { if (page !== "col") goPage("col"); if ($("chartPanel").hidden) openChart("all", true); else closeChart(); },
     "g": () => { if (page === "col") $("viewSeg").querySelector(view === "grid" ? '[data-v="list"]' : '[data-v="grid"]').click(); },
-    "m": () => $("btnEye").click(), "r": () => $("btnSet").click(), "l": lockNow, "?": () => toggleKeys(), ",": () => toggleKeys(),
+    "m": () => $("btnEye").click(), "r": () => $("btnSet").click(), "l": () => lockNow(true), "?": () => toggleKeys(), ",": () => toggleKeys(),
   }[k];
   if (act) { ev.preventDefault(); act(); }
 });
 $("keysOpen").addEventListener("click", () => toggleKeys(true));
 $("keysClose").addEventListener("click", () => toggleKeys(false));
-// Les filtres ne s'appliquent qu'au clic sur « Actualiser » (ou Entrée) : on lit alors les valeurs affichées.
+// Les filtres s'appliquent tout de suite (court délai pendant la frappe) : on lit les valeurs affichées.
 const R_FILTERS = [["rQ", "r_q", ""], ["rShip", "r_ship", "3"], ["rComm", "r_comm", "0"], ["rMin", "r_min", "5"], ["rMax", "r_max", ""], ["rRoi", "r_roi", ""], ["rGain", "r_gain", ""], ["rN", "r_n", "1"], ["rSpeed", "r_speed", "regular"]];
 // Prix loose min/max : champs libres. Min vide = « 0 » (aucun minimum), max vide = sans limite.
 const rVal = id => id === "rMin" ? (cleanMoney(id) || "0") : id === "rMax" ? cleanMoney(id) : String($(id).value);
-function rMarkPending() {
-  const changed = R_FILTERS.some(([id, k, d]) => rVal(id) !== String(pref.get(k, d)));
-  $("rApply").classList.toggle("pending", changed);
-  $("rPending").textContent = changed ? "Filtres modifiés : clique sur « Actualiser » pour les appliquer." : "Choisis tes filtres, puis clique sur « Actualiser » (ou appuie sur Entrée).";
-}
-function rApply() {
+function rApply(tidy) {   // tidy = false pendant la frappe : on ne réécrit pas le champ sous les doigts
   R_FILTERS.forEach(([id, k]) => pref.set(k, rVal(id)));
-  $("rMin").value = pref.get("r_min", "5") === "0" ? "" : pref.get("r_min", "5"); $("rMax").value = pref.get("r_max", "");
-  rMarkPending(); renderResearch();
+  if (tidy !== false) { $("rMin").value = pref.get("r_min", "5") === "0" ? "" : pref.get("r_min", "5"); $("rMax").value = pref.get("r_max", ""); }
+  renderResearch();
 }
+const rLater = debounce(() => rApply(false), 220);
+const onEnter = (id, fn) => $(id).addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); fn(); } });
 [["rQ", "r_q", ""], ["rShip", "r_ship", "3"], ["rComm", "r_comm", "0"]].forEach(([id, k, d]) => {
-  $(id).value = pref.get(k, d); $(id).addEventListener("input", rMarkPending);
-  $(id).addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); rApply(); } }); });
+  $(id).value = pref.get(k, d); $(id).addEventListener("input", rLater); onEnter(id, () => rApply()); });
 if (pref.get("r_min", "5") === "") pref.set("r_min", "0");
 $("rMin").value = pref.get("r_min", "5") === "0" ? "" : pref.get("r_min", "5"); $("rMax").value = pref.get("r_max", "");
-["rMin", "rMax"].forEach(id => { $(id).addEventListener("input", rMarkPending); $(id).addEventListener("focus", () => $(id).select());
-  $(id).addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); rApply(); } }); });
+["rMin", "rMax"].forEach(id => { $(id).addEventListener("input", rLater); $(id).addEventListener("change", () => rApply());
+  $(id).addEventListener("focus", () => $(id).select()); onEnter(id, () => rApply()); });
 [["rRoi", "r_roi", ""], ["rGain", "r_gain", ""], ["rN", "r_n", "1"], ["rSpeed", "r_speed", "regular"]].forEach(([id, k, d]) => {
-const s = $(id), v0 = pref.get(k, d);
-if (["rRoi", "rGain"].includes(id) && v0 !== "" && ![...s.options].some(o => o.value === v0)) s.add(new Option(String(v0).replace(".", ",") + (id === "rRoi" ? " %" : " €"), v0));
-  $(id).value = pref.get(k, d); $(id).addEventListener("change", rMarkPending); });
-$("rApply").addEventListener("click", rApply);
+  const sel = $(id), v0 = pref.get(k, d);
+  if (["rRoi", "rGain"].includes(id) && v0 !== "" && ![...sel.options].some(o => o.value === v0)) sel.add(new Option(String(v0).replace(".", ",") + (id === "rRoi" ? " %" : " €"), v0));
+  sel.value = v0; sel.addEventListener("change", () => rApply()); });
 $("rNote").addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) { pref.set("r_note", b.dataset.n); renderResearch(); } });
 $("cQ").addEventListener("input", renderCardSearch);
 $("cRes").addEventListener("click", ev => { const b = ev.target.closest("button.cr"); if (b && cardShown[+b.dataset.i]) { cardSel = cardShown[+b.dataset.i]; renderCardSearch(); } });
 $("rSort").addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) { pref.set("r_sort", b.dataset.s); renderResearch(); } });
+$("dashToggle").addEventListener("click", () => { pref.set("dash", pref.get("dash", "1") === "0" ? "1" : "0"); renderDash(); });
+$("dashRech").addEventListener("click", () => goPage("rech"));
+$("dashWatch").addEventListener("click", () => goPage("watch"));
+
+// ---------- aperçu en grand (clic sur l'image d'une carte) : on reste sur la page, Échap ou un clic à côté referme ----------
+const lightbox = (() => {
+  const dlg = $("lb"), big = $("lbImg"), cap = $("lbCap");
+  let list = [], at = 0, downX = null;
+  watchImg(big);
+  function show(i) {
+    at = (i + list.length) % list.length;
+    const t = list[at], low = t.currentSrc || t.src, high = bigImg(low);
+    delete big.dataset.alt; big.classList.remove("noimg"); big.classList.add("ph");
+    big.src = low;   // la vignette, déjà chargée, s'affiche tout de suite ; la grande image la remplace dès qu'elle est prête
+    if (high !== low) { const pre = new Image(); pre.referrerPolicy = "no-referrer"; pre.onload = () => { if (dlg.open && list[at] === t) big.src = high; }; pre.src = high; }
+    big.alt = t.dataset.cap || ""; cap.textContent = t.dataset.cap || "";
+    $("lbPrev").hidden = $("lbNext").hidden = list.length < 2;
+  }
+  function open(img) {
+    if (!dlg.showModal || !img || img.classList.contains("noimg")) return;
+    const root = img.closest("table, .cards, .dash");   // les autres cartes de la même liste : flèches pour passer de l'une à l'autre
+    list = root ? [...root.querySelectorAll("img.cimg[data-cap]")].filter(x => x.offsetParent !== null) : [];
+    if (!list.includes(img)) list = [img];
+    hideZoom(); document.documentElement.style.overflow = "hidden";
+    if (!dlg.open) dlg.showModal();
+    show(list.indexOf(img));
+  }
+  const close = () => { if (dlg.open) dlg.close(); };
+  dlg.addEventListener("close", () => { document.documentElement.style.overflow = ""; big.src = BLANK; list = []; });
+  dlg.addEventListener("click", ev => { if (!ev.target.closest("button, img")) close(); });
+  $("lbClose").addEventListener("click", close);
+  $("lbPrev").addEventListener("click", () => show(at - 1));
+  $("lbNext").addEventListener("click", () => show(at + 1));
+  dlg.addEventListener("keydown", ev => {
+    if (list.length > 1 && ev.key === "ArrowLeft") { ev.preventDefault(); show(at - 1); }
+    if (list.length > 1 && ev.key === "ArrowRight") { ev.preventDefault(); show(at + 1); }
+  });
+  dlg.addEventListener("pointerdown", ev => { downX = ev.clientX; });
+  dlg.addEventListener("pointerup", ev => {   // glisser à gauche ou à droite
+    const dx = downX == null ? 0 : ev.clientX - downX; downX = null;
+    if (list.length > 1 && Math.abs(dx) > 50) show(at + (dx < 0 ? 1 : -1));
+  });
+  // Un seul écouteur pour toutes les images : le clic sur une vignette ouvre l'aperçu au lieu de la ligne.
+  document.addEventListener("click", ev => {
+    const img = ev.target.closest && ev.target.closest("img[data-zoom]");
+    if (!img || !dlg.showModal) return;
+    ev.preventDefault(); ev.stopPropagation(); open(img);
+  }, true);
+  return { open, close, isOpen: () => dlg.open };
+})();
+watchImg($("chartImg"));
+
 if (SR) { $("btnMic").hidden = false; $("fMic").hidden = false; $("micNote").hidden = false; }
 $("btnMic").addEventListener("click", dictate);
 $("fMic").addEventListener("click", dictate);
-try {
-  const saved = sessionStorage.getItem("k");
-  let s = null; try { s = JSON.parse(saved); } catch (e) { s = saved ? { p: saved } : null; }
-  if (s && s.p) unlock(s.p, s.u).catch(() => { state.password = null; state.guestKey = null; try { sessionStorage.removeItem("k"); } catch (e) {} });
-} catch (e) {}
+session.restore().then(s => { if (s && s.p) return unlock(s.p, s.u); })
+  .catch(() => { state.password = null; state.guestKey = null; session.end(false); });
