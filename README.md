@@ -13,7 +13,7 @@ Recherche (acheter en loose, faire grader en CCC) et une page « À surveiller �
 
 ## Fichiers
 
-- `index.html` : tout le site (aucun serveur ni base de données).
+- `index.html` : la page et ses styles ; `app.js` : tout le JavaScript du site (aucun serveur ni base de données).
 - `data/vault.json` : ta collection et son historique, chiffrés (AES-256-GCM, clé dérivée du mot de passe).
 - `data/research.json`, `data/watch.json` : Recherche et cartes à surveiller, chiffrées de la même façon.
 - `data/auth.json`, `data/keyring.json` : connexion (mot de passe modifiable, code de récupération) et comptes invités.
